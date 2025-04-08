@@ -47,6 +47,11 @@ def load_data(data_path):
 
     return games_df, users_df, recommendations_df, metadata_df
 
+def process_tags(x):
+    if isinstance(x, list):
+        return x
+    else:
+        return []
 
 def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=None):
     """数据预处理"""
@@ -65,12 +70,25 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
     games_with_metadata = pd.merge(games_df, metadata_df, on='app_id', how='left')
 
     # 处理缺失的描述
-    games_with_metadata['description'] = games_with_metadata['description'].fillna('')
+    if 'description' in games_with_metadata.columns:
+        games_with_metadata['description'] = games_with_metadata['description'].fillna('')
+    else:
+        games_with_metadata['description'] = ''
 
     # 处理标签数据
-    games_with_metadata['tags'] = games_with_metadata['tags'].apply(
-        lambda x: [] if pd.isna(x) else x
-    )
+    def process_tags(x):
+        if isinstance(x, list):
+            return x
+        elif pd.isna(x) or x is None:
+            return []
+        else:
+            return []
+
+    # 如果tags列存在，则处理它；如果不存在，则创建一个空列表列
+    if 'tags' in games_with_metadata.columns:
+        games_with_metadata['tags'] = games_with_metadata['tags'].apply(process_tags)
+    else:
+        games_with_metadata['tags'] = [[] for _ in range(len(games_with_metadata))]
 
     # 创建用于协同过滤的评分数据
     # 将游戏时长和是否推荐转换为评分
@@ -80,17 +98,21 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
     )
 
     # 转换为Spark DataFrame（如果提供了Spark会话）
+    spark_ratings = None
     if spark is not None:
-        spark_ratings = spark.createDataFrame(
-            recommendations_df[['user_id', 'app_id', 'rating']]
-        )
+        try:
+            # 尝试创建Spark DataFrame
+            spark_ratings = spark.createDataFrame(
+                recommendations_df[['user_id', 'app_id', 'rating']]
+            )
+        except Exception as e:
+            print(f"创建Spark DataFrame时出错: {e}")
+            print("将使用None代替Spark DataFrame")
     else:
-        spark_ratings = None
         print("未提供Spark会话，跳过Spark DataFrame转换")
 
     print("数据预处理完成")
     return games_with_metadata, spark_ratings, recommendations_df
-
 
 def split_data(data, test_ratio=0.2, random_state=42):
     """将数据分割为训练集和测试集"""

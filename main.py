@@ -12,6 +12,31 @@ from src.cold_start import build_popularity_model, build_content_based_cold_star
 import boto3
 from pyspark.ml.recommendation import ALSModel
 
+def save_checkpoint(model, step, metrics, bucket_name="steam-project-data"):
+    """保存训练检查点到本地和S3"""
+    checkpoint_path = os.path.join("checkpoints", f"checkpoint_{step}")
+    os.makedirs(checkpoint_path, exist_ok=True)
+
+    # 保存模型
+    model.save(os.path.join(checkpoint_path, "model"))
+
+    # 保存训练进度和指标
+    with open(os.path.join(checkpoint_path, "metrics.json"), 'w') as f:
+        json.dump(metrics, f)
+
+    # 上传到S3
+    try:
+        s3_client = boto3.client('s3')
+        for root, dirs, files in os.walk(checkpoint_path):
+            for file in files:
+                local_path = os.path.join(root, file)
+                relative_path = os.path.relpath(local_path, "checkpoints")
+                s3_key = f"checkpoints/{relative_path}"
+                s3_client.upload_file(local_path, bucket_name, s3_key)
+        print(f"检查点 {step} 已保存到S3")
+    except Exception as e:
+        print(f"保存检查点到S3时出错: {e}")
+
 def main():
     # 记录开始时间
     start_time = time.time()
@@ -76,9 +101,15 @@ def main():
     als_metrics = evaluate_als_model(als_model, spark_test)
     print(f"ALS模型评估结果: {als_metrics}")
 
+    # 在这里添加保存检查点
+    save_checkpoint(als_model, "als_complete", als_metrics)
+
     # 构建TF-IDF模型
     print("构建TF-IDF模型...")
     tfidf, cosine_sim, indices, content_df = build_tfidf_model(games_with_metadata)
+
+    # 在这里添加保存检查点（仅保存指标，不保存模型）
+    save_checkpoint(None, "tfidf_complete", {"status": "complete"})
 
     # 构建混合推荐模型
     print("构建混合推荐模型...")
@@ -89,6 +120,9 @@ def main():
         hybrid_models[f"Hybrid_{weight}"] = build_hybrid_recommender(
             als_model, cosine_sim, indices, games_with_metadata, train_data, weight, spark
         )
+
+    # 在这里添加保存检查点
+    save_checkpoint(None, "hybrid_complete", {"hybrid_weights": [0.3, 0.5, 0.7, 0.9]})
 
     # 创建纯协同过滤推荐模型
     pure_cf_model = build_hybrid_recommender(
@@ -154,6 +188,7 @@ def main():
     models_path = "models"
 
     # 保存ALS模型
+    # main.py中的保存模型部分
     try:
         # 本地保存
         als_model.save(os.path.join(models_path, "als_model"))
@@ -161,6 +196,7 @@ def main():
 
         # 保存到S3
         s3_client = boto3.client('s3')
+        bucket_name = "steam-project-data"  # 确保这个名称一致
 
         # 如果模型文件夹存在，上传其中的所有文件
         model_dir = os.path.join(models_path, "als_model")
@@ -170,7 +206,7 @@ def main():
                     local_path = os.path.join(root, file)
                     relative_path = os.path.relpath(local_path, models_path)
                     s3_key = f"models/{relative_path}"
-                    s3_client.upload_file(local_path, "steam-project-data", s3_key)
+                    s3_client.upload_file(local_path, bucket_name, s3_key)
             print("ALS模型已上传到S3")
 
     except Exception as e:
@@ -224,6 +260,12 @@ def main():
     end_time = time.time()
     run_time = end_time - start_time
     print(f"\n总运行时间: {run_time:.2f} 秒 ({run_time / 60:.2f} 分钟)")
+
+    # 最终检查点
+    save_checkpoint(None, "training_complete", {
+        "total_runtime_seconds": run_time,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
 
     print("\n完成！推荐系统模型已训练并评估。")
 

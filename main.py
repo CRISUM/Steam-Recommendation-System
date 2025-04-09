@@ -9,14 +9,17 @@ from src.content_based import build_tfidf_model, get_content_recommendations
 from src.hybrid_model import build_hybrid_recommender, get_popular_recommendations
 from src.evaluation import evaluate_recommendations, compare_recommenders, visualize_comparison, save_evaluation_results
 from src.cold_start import build_popularity_model, build_content_based_cold_start
-
+import boto3
+from pyspark.ml.recommendation import ALSModel
 
 def main():
     # 记录开始时间
     start_time = time.time()
 
     # 数据路径
-    data_path = "data"
+    # data_path = "data"
+    # 数据路径 - 现在指向S3
+    data_path = "s3://steam-project-data"
 
     # 结果保存路径
     results_path = "results"
@@ -141,9 +144,35 @@ def main():
     print("保存模型...")
 
     # 保存ALS模型
+    #try:
+    #    als_model.save(os.path.join(models_path, "als_model"))
+    #    print("ALS模型已保存")
+    #except Exception as e:
+    #    print(f"保存ALS模型时出错: {e}")
+
+    results_path = "results"
+    models_path = "models"
+
+    # 保存ALS模型
     try:
+        # 本地保存
         als_model.save(os.path.join(models_path, "als_model"))
-        print("ALS模型已保存")
+        print("ALS模型已保存到本地")
+
+        # 保存到S3
+        s3_client = boto3.client('s3')
+
+        # 如果模型文件夹存在，上传其中的所有文件
+        model_dir = os.path.join(models_path, "als_model")
+        if os.path.exists(model_dir):
+            for root, dirs, files in os.walk(model_dir):
+                for file in files:
+                    local_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_path, models_path)
+                    s3_key = f"models/{relative_path}"
+                    s3_client.upload_file(local_path, "steam-project-data", s3_key)
+            print("ALS模型已上传到S3")
+
     except Exception as e:
         print(f"保存ALS模型时出错: {e}")
 

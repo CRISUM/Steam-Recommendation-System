@@ -5,11 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="6016988d-9789-4a71-870b-54821417972e" name="更改" comment="">
-      <change afterPath="$PROJECT_DIR$/create_small_dataset.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_system.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/spark_test.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_s3.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/data_processing.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/data_processing.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_recommendation.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_recommendation.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -46,6 +46,8 @@
     "Python.create_small_dataset.executor": "Run",
     "Python.data_processing.executor": "Run",
     "Python.main.executor": "Run",
+    "Python.spark_test.executor": "Run",
+    "Python.test_s3.executor": "Run",
     "Python.test_system.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
@@ -76,6 +78,10 @@
       <option name="presentableId" value="Default" />
       <updated>1744093669862</updated>
       <workItem from="1744093670875" duration="3342000" />
+      <workItem from="1744192525815" duration="715000" />
+      <workItem from="1744193783595" duration="427000" />
+      <workItem from="1744194421808" duration="991000" />
+      <workItem from="1744195429157" duration="615000" />
     </task>
     <servers />
   </component>
@@ -87,7 +93,9 @@
     <SUITE FILE_PATH="coverage/SRS$test_system.coverage" NAME="test_system 覆盖结果" MODIFIED="1744096331056" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/SRS$.coverage" NAME=" 覆盖结果" MODIFIED="1744096155131" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
     <SUITE FILE_PATH="coverage/SRS$main.coverage" NAME="main 覆盖结果" MODIFIED="1744095166306" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/SRS$spark_test.coverage" NAME="spark_test 覆盖结果" MODIFIED="1744194625321" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
     <SUITE FILE_PATH="coverage/SRS$app.coverage" NAME="app 覆盖结果" MODIFIED="1744094816494" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/SRS$test_s3.coverage" NAME="test_s3 覆盖结果" MODIFIED="1744195830348" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
     <SUITE FILE_PATH="coverage/SRS$create_small_dataset.coverage" NAME="create_small_dataset 覆盖结果" MODIFIED="1744096304857" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
   </component>
 </project>

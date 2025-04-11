@@ -8,6 +8,14 @@ import os
 import sys
 import json
 from pyspark.sql import SparkSession
+import threading
+import requests
+import matplotlib.pyplot as plt
+import json
+import os
+import time
+from datetime import datetime, timedelta
+from src.online_learning import METRICS_FILE
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
@@ -31,6 +39,13 @@ if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 if 'models_built' not in st.session_state:
     st.session_state.models_built = False
+
+if 'online_learning_enabled' not in st.session_state:
+    st.session_state.online_learning_enabled = False
+if 'online_learning_status' not in st.session_state:
+    st.session_state.online_learning_status = None
+if 'metrics_data' not in st.session_state:
+    st.session_state.metrics_data = []
 
 # 标题和介绍
 st.title("Steam游戏推荐系统")
@@ -109,8 +124,60 @@ if st.sidebar.button("构建模型") and st.session_state.data_loaded:
     if st.session_state.models_built:
         st.success("模型构建完成！")
 
-# 创建选项卡
-tab1, tab2, tab3 = st.tabs(["用户推荐", "游戏相似度", "推荐系统评估"])
+# 在线学习控制
+st.sidebar.header("在线学习")
+online_learning_enabled = st.sidebar.checkbox("启用在线学习", value=st.session_state.online_learning_enabled)
+
+if online_learning_enabled != st.session_state.online_learning_enabled:
+    st.session_state.online_learning_enabled = online_learning_enabled
+
+    try:
+        # 通知在线学习服务切换状态
+        response = requests.post(
+            "http://localhost:5000/api/toggle_learning",
+            json={"enabled": online_learning_enabled},
+            timeout=5
+        )
+
+        if response.status_code == 200:
+            result = response.json()
+            st.sidebar.success(f"在线学习已{'启用' if result['enabled'] else '禁用'}")
+            st.session_state.online_learning_status = "running" if result['enabled'] else "stopped"
+        else:
+            st.sidebar.error(f"切换在线学习失败: {response.text}")
+    except Exception as e:
+        st.sidebar.error(f"连接在线学习服务失败: {e}")
+        st.session_state.online_learning_status = "error"
+
+# 在线学习状态
+if st.session_state.online_learning_enabled:
+    try:
+        # 获取在线学习服务状态
+        response = requests.get("http://localhost:5000/api/status", timeout=5)
+
+        if response.status_code == 200:
+            status = response.json()
+
+            # 显示状态信息
+            buffer_size = status.get('buffer_size', {})
+            total_buffer = buffer_size.get('total', 0)
+
+            st.sidebar.metric("缓冲区大小", total_buffer)
+            st.sidebar.text(f"上次更新: {status.get('last_update_time', '无')}")
+            st.sidebar.text(f"更新次数: {status.get('update_count', 0)}")
+
+            if status.get('update_thread_running', False):
+                st.sidebar.success("在线学习正在运行")
+            else:
+                st.sidebar.warning("在线学习已启用但未运行")
+        else:
+            st.sidebar.error("获取在线学习状态失败")
+
+    except Exception as e:
+        st.sidebar.error(f"连接在线学习服务失败: {e}")
+
+# 添加新的选项卡
+tab1, tab2, tab3, tab4 = st.tabs(["用户推荐", "游戏相似度", "推荐系统评估", "在线学习分析"])
 
 # 用户推荐选项卡
 with tab1:
@@ -311,6 +378,165 @@ with tab3:
             st.image(img_path, caption="模型性能比较详细图表")
     else:
         st.info("未找到评估结果。请先运行main.py生成评估结果。")
+
+# 在线学习分析选项卡
+with tab4:
+    st.header("在线学习性能分析")
+
+    if not st.session_state.online_learning_enabled:
+        st.warning("请先启用在线学习功能")
+    else:
+        # 添加刷新按钮
+        if st.button("刷新在线学习指标"):
+            try:
+                # 获取指标数据
+                response = requests.get("http://localhost:5000/api/metrics", timeout=5)
+
+                if response.status_code == 200:
+                    metrics_data = response.json()
+                    st.session_state.metrics_data = metrics_data
+                    st.success(f"已加载 {len(metrics_data)} 条指标数据")
+                else:
+                    st.error(f"获取指标失败: {response.text}")
+            except Exception as e:
+                st.error(f"连接在线学习服务失败: {e}")
+
+        # 如果有指标数据，则显示
+        if st.session_state.metrics_data:
+            metrics = st.session_state.metrics_data
+
+            # 创建性能指标表格
+            st.subheader("最近更新指标")
+
+            # 提取最近5次更新的指标
+            recent_metrics = metrics[-5:] if len(metrics) > 5 else metrics
+            recent_metrics.reverse()  # 最新的在前面
+
+            # 转换为DataFrame以便显示
+            metrics_df = pd.DataFrame(recent_metrics)
+
+            if 'timestamp' in metrics_df.columns:
+                metrics_df['timestamp'] = pd.to_datetime(metrics_df['timestamp'])
+                metrics_df['timestamp'] = metrics_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+            # 选择要显示的列
+            display_cols = ['update_id', 'timestamp', 'rmse', 'processing_time', 'training_time',
+                            'num_samples', 'num_new_games', 'update_type']
+            display_cols = [col for col in display_cols if col in metrics_df.columns]
+
+            st.dataframe(metrics_df[display_cols], use_container_width=True)
+
+            # 绘制RMSE随时间变化图
+            st.subheader("模型性能随时间变化")
+
+            # 创建绘图数据
+            plot_metrics = pd.DataFrame(metrics)
+            if 'timestamp' in plot_metrics.columns:
+                plot_metrics['timestamp'] = pd.to_datetime(plot_metrics['timestamp'])
+                plot_metrics = plot_metrics.sort_values('timestamp')
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # 绘制RMSE图
+            if 'rmse' in plot_metrics.columns:
+                ax.plot(range(len(plot_metrics)), plot_metrics['rmse'], 'b-', label='RMSE')
+                ax.set_ylabel('RMSE', color='b')
+                ax.tick_params(axis='y', labelcolor='b')
+
+                # 设置x轴标签
+                if len(plot_metrics) > 10:
+                    step = len(plot_metrics) // 10
+                    ax.set_xticks(range(0, len(plot_metrics), step))
+                    if 'timestamp' in plot_metrics.columns:
+                        ax.set_xticklabels(plot_metrics['timestamp'].iloc[::step].dt.strftime('%H:%M'), rotation=45)
+                    else:
+                        ax.set_xticklabels(
+                            plot_metrics['update_id'].iloc[::step] if 'update_id' in plot_metrics.columns else range(1,
+                                                                                                                     len(plot_metrics) + 1,
+                                                                                                                     step))
+
+                # 添加训练时间图
+                if 'training_time' in plot_metrics.columns or 'processing_time' in plot_metrics.columns:
+                    ax2 = ax.twinx()
+
+                    if 'training_time' in plot_metrics.columns:
+                        ax2.plot(range(len(plot_metrics)), plot_metrics['training_time'], 'r--', label='训练时间')
+
+                    if 'processing_time' in plot_metrics.columns:
+                        ax2.plot(range(len(plot_metrics)), plot_metrics['processing_time'], 'g-.', label='处理时间')
+
+                    ax2.set_ylabel('时间 (秒)', color='r')
+                    ax2.tick_params(axis='y', labelcolor='r')
+
+                # 添加图例
+                lines1, labels1 = ax.get_legend_handles_labels()
+                if 'training_time' in plot_metrics.columns or 'processing_time' in plot_metrics.columns:
+                    lines2, labels2 = ax2.get_legend_handles_labels()
+                    ax.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+                else:
+                    ax.legend(loc='upper right')
+
+                ax.set_title('模型性能随时间变化')
+                ax.grid(True, linestyle='--', alpha=0.7)
+                fig.tight_layout()
+
+                st.pyplot(fig)
+
+            # 显示样本数和新游戏数
+            st.subheader("数据增长情况")
+
+            fig2, ax = plt.subplots(figsize=(10, 6))
+
+            if 'num_samples' in plot_metrics.columns:
+                ax.bar(range(len(plot_metrics)), plot_metrics['num_samples'], alpha=0.7, label='新样本数')
+
+            if 'num_new_games' in plot_metrics.columns:
+                ax.bar(range(len(plot_metrics)), plot_metrics['num_new_games'], alpha=0.5, label='新游戏数')
+
+            ax.set_ylabel('数量')
+
+            # 设置x轴标签
+            if len(plot_metrics) > 10:
+                step = len(plot_metrics) // 10
+                ax.set_xticks(range(0, len(plot_metrics), step))
+                if 'timestamp' in plot_metrics.columns:
+                    ax.set_xticklabels(plot_metrics['timestamp'].iloc[::step].dt.strftime('%H:%M'), rotation=45)
+                else:
+                    ax.set_xticklabels(
+                        plot_metrics['update_id'].iloc[::step] if 'update_id' in plot_metrics.columns else range(1,
+                                                                                                                 len(plot_metrics) + 1,
+                                                                                                                 step))
+
+            ax.legend()
+            ax.set_title('数据增长情况')
+            ax.grid(True, linestyle='--', alpha=0.7)
+            fig2.tight_layout()
+
+            st.pyplot(fig2)
+
+        else:
+            st.info("暂无在线学习指标数据，请点击刷新按钮获取")
+
+
+# 启动在线学习服务的函数
+def start_online_learning_service():
+    """启动在线学习服务"""
+    import subprocess
+    import sys
+
+    try:
+        # 启动在线学习服务
+        cmd = [sys.executable, "-m", "src.online_learning"]
+        process = subprocess.Popen(cmd)
+
+        # 等待服务启动
+        time.sleep(5)
+
+        return process
+    except Exception as e:
+        st.error(f"启动在线学习服务失败: {e}")
+        return None
+
 
 # 关闭Spark会话
 if st.sidebar.button("关闭Spark"):

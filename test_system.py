@@ -1,8 +1,7 @@
 # test_system.py
-import os
 import time
-from src.data_processing import initialize_spark, load_data, preprocess_data
-from src.content_based import build_tfidf_model, get_content_recommendations
+from src import load_data, preprocess_data
+from src import build_tfidf_model, get_content_recommendations
 
 
 def test_system():

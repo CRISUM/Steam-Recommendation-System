@@ -2,28 +2,20 @@
 import numpy as np
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import os
 import sys
-import json
-from pyspark.sql import SparkSession
-import threading
 import requests
 import matplotlib.pyplot as plt
 import json
 import os
 import time
-from datetime import datetime, timedelta
-from src.online_learning import METRICS_FILE
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-from src.data_processing import initialize_spark, load_data, preprocess_data
-from src.content_based import build_tfidf_model, get_content_recommendations
-from src.hybrid_model import build_hybrid_recommender
-from src.cold_start import build_popularity_model
+from src import initialize_spark, load_data, preprocess_data
+from src import build_tfidf_model, get_content_recommendations
+from src import build_hybrid_recommender
+from src import build_popularity_model
 
 # 页面配置
 st.set_page_config(
@@ -210,7 +202,7 @@ with tab1:
                     title = f"为用户 {user_id} 的混合推荐"
                 elif rec_type == "协同过滤推荐":
                     # 使用ALS模型直接推荐
-                    from src.collaborative_filtering import get_als_recommendations
+                    from src import get_als_recommendations
 
                     als_recs = get_als_recommendations(
                         st.session_state.als_model, user_id, 10, st.session_state.spark

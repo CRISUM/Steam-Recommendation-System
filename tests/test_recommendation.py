@@ -3,13 +3,12 @@ import unittest
 import sys
 import os
 import pandas as pd
-import numpy as np
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.data_processing import initialize_spark, load_data, preprocess_data
-from src.content_based import build_tfidf_model, get_content_recommendations
+from src import initialize_spark, preprocess_data
+from src import build_tfidf_model, get_content_recommendations
 
 
 class TestRecommendationSystem(unittest.TestCase):

@@ -2,15 +2,14 @@
 import os
 import json
 import time
-from src.data_processing import initialize_spark, load_data, preprocess_data, split_data
-from src.collaborative_filtering import build_als_model, evaluate_als_model, tune_als_parameters, \
-    get_als_recommendations
-from src.content_based import build_tfidf_model, get_content_recommendations
-from src.hybrid_model import build_hybrid_recommender, get_popular_recommendations
-from src.evaluation import evaluate_recommendations, compare_recommenders, visualize_comparison, save_evaluation_results
-from src.cold_start import build_popularity_model, build_content_based_cold_start
+from src import initialize_spark, load_data, preprocess_data, split_data
+from src import build_als_model, evaluate_als_model, tune_als_parameters
+from src import build_tfidf_model
+from src import build_hybrid_recommender
+from src import compare_recommenders, visualize_comparison, save_evaluation_results
+from src import build_popularity_model, build_content_based_cold_start
 import boto3
-from pyspark.ml.recommendation import ALSModel
+
 
 def save_checkpoint(model, step, metrics, bucket_name="steam-project-data"):
     """保存训练检查点到本地和S3"""

@@ -28,7 +28,7 @@ def prepare_content_data(games_df):
     return games_df
 
 
-def build_tfidf_model(games_df, max_features=5000):
+def build_tfidf_model(games_df, max_features=10000):
     """构建TF-IDF模型"""
     # 准备内容数据
     content_df = prepare_content_data(games_df)

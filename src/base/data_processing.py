@@ -12,11 +12,12 @@ def initialize_spark(app_name="SteamRecommendationSystem"):
     """初始化Spark会话"""
     spark = SparkSession.builder \
         .appName(app_name) \
-        .master("local[*]") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.access.key", os.environ.get("AWS_ACCESS_KEY_ID", "")) \
         .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("AWS_SECRET_ACCESS_KEY", "")) \
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
+        .config("spark.hadoop.fs.s3a.fast.upload", "true") \
+        .config("spark.hadoop.fs.s3a.connection.maximum", "100") \
         .config("spark.executor.memory", "4g") \
         .config("spark.driver.memory", "4g") \
         .getOrCreate()

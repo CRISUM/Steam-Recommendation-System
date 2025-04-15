@@ -44,7 +44,7 @@ def load_data(data_path=None):
 
     else:
         # 默认从S3加载当前项目的数据
-        return load_data_from_s3("steam-project-data", "")
+        return load_data_from_s3("steam-project-data-976193243904", "")
 
 
 def load_data_from_s3(bucket_name, prefix=""):

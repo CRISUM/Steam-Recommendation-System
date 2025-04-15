@@ -20,7 +20,7 @@ from . import METRICS_FILE, MODEL_CHECKPOINT_DIR
 logger = logging.getLogger("online_learning.storage")
 
 
-def save_metrics(metrics, bucket_name="steam-project-data"):
+def save_metrics(metrics, bucket_name="steam-project-data-976193243904"):
     """
     保存指标到本地文件和S3
 
@@ -73,7 +73,7 @@ def save_metrics(metrics, bucket_name="steam-project-data"):
         logger.error(f"上传指标到S3出错: {e}")
 
 
-def save_model_checkpoint(model_type, model_obj, metrics, bucket_name="steam-project-data"):
+def save_model_checkpoint(model_type, model_obj, metrics, bucket_name="steam-project-data-976193243904"):
     """
     保存模型检查点到本地和S3
 
@@ -137,7 +137,7 @@ def save_model_checkpoint(model_type, model_obj, metrics, bucket_name="steam-pro
         logger.error(f"上传检查点到S3出错: {e}")
 
 
-def load_model_from_s3(s3_path, local_path="temp_model", bucket_name="steam-project-data"):
+def load_model_from_s3(s3_path, local_path="temp_model", bucket_name="steam-project-data-976193243904"):
     """
     从S3加载模型
 

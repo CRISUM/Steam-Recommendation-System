@@ -57,7 +57,7 @@ if st.sidebar.button("初始化Spark") or st.session_state.spark is None:
 # 加载数据
 if st.sidebar.button("加载数据") or (st.session_state.spark is not None and not st.session_state.data_loaded):
     with st.spinner("正在加载数据..."):
-        data_path = "s3a://steam-project-data"
+        data_path = "s3a://steam-project-data-976193243904"
         games_df, users_df, recommendations_df, metadata_df = load_data(data_path)
         games_with_metadata, spark_ratings, processed_recommendations = preprocess_data(
             games_df, users_df, recommendations_df, metadata_df, st.session_state.spark

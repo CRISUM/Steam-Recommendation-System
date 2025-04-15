@@ -11,7 +11,7 @@ from src import build_popularity_model, build_content_based_cold_start
 import boto3
 
 
-def save_checkpoint(model, step, metrics, bucket_name="steam-project-data"):
+def save_checkpoint(model, step, metrics, bucket_name="steam-project-data-976193243904"):
     """保存训练检查点到本地和S3"""
     checkpoint_path = os.path.join("checkpoints", f"checkpoint_{step}")
     os.makedirs(checkpoint_path, exist_ok=True)
@@ -43,7 +43,7 @@ def main():
     # 数据路径
     # data_path = "data"
     # 数据路径 - 现在指向S3
-    data_path = "s3://steam-project-data"
+    data_path = "s3://steam-project-data-976193243904"
 
     # 结果保存路径
     results_path = "results"
@@ -195,7 +195,7 @@ def main():
 
         # 保存到S3
         s3_client = boto3.client('s3')
-        bucket_name = "steam-project-data"  # 确保这个名称一致
+        bucket_name = "steam-project-data-976193243904"  # 确保这个名称一致
 
         # 如果模型文件夹存在，上传其中的所有文件
         model_dir = os.path.join(models_path, "als_model")

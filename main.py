@@ -2,6 +2,8 @@
 import os
 import json
 import time
+import sys
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from src import initialize_spark, load_data, preprocess_data, split_data
 from src import build_als_model, evaluate_als_model, tune_als_parameters
 from src import build_tfidf_model

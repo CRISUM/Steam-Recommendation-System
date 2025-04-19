@@ -39,7 +39,6 @@ def initialize_spark():
     if spark is None:
         spark = SparkSession.builder \
             .appName("OnlineSteamRecommender") \
-            .master("local[*]") \
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
             .config("spark.hadoop.fs.s3a.access.key", os.environ.get("AWS_ACCESS_KEY_ID", "")) \
             .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("AWS_SECRET_ACCESS_KEY", "")) \

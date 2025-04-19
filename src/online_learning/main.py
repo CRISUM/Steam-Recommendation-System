@@ -59,9 +59,9 @@ def parse_arguments():
 
     # 如果使用S3，调整路径
     if args.use_s3:
-        if not args.data_path.startswith('s3://'):
+        if not args.data_path.startswith('s3a://'):
             args.data_path = f"steam-project-data-976193243904/{args.data_path.lstrip('/')}"
-        if not args.model_path.startswith('s3://'):
+        if not args.model_path.startswith('s3a://'):
             args.model_path = f"steam-project-data-976193243904/{args.model_path.lstrip('/')}"
 
     return args

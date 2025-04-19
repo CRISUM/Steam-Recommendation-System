@@ -15,9 +15,17 @@ from pathlib import Path
 from datetime import datetime
 
 from . import METRICS_FILE, MODEL_CHECKPOINT_DIR
+from src.utils.aws_utils import get_storage_path, is_emr_cluster_mode
 
 # 设置日志
 logger = logging.getLogger("online_learning.storage")
+
+
+def get_adjusted_path(path):
+    """获取根据环境调整的路径"""
+    if is_emr_cluster_mode():
+        return get_storage_path(path)
+    return path
 
 
 def save_metrics(metrics, bucket_name="steam-project-data-976193243904"):
@@ -28,49 +36,91 @@ def save_metrics(metrics, bucket_name="steam-project-data-976193243904"):
         metrics (dict): 性能指标字典
         bucket_name (str): S3存储桶名称
     """
-    # 确保目录存在
-    Path(os.path.dirname(METRICS_FILE)).mkdir(parents=True, exist_ok=True)
+    # 获取适当的路径
+    metrics_file_path = get_adjusted_path(METRICS_FILE)
 
     # 添加时间戳（如果没有）
     if 'timestamp' not in metrics:
         metrics['timestamp'] = datetime.now().isoformat()
 
-    # 从文件加载现有指标
-    existing_metrics = []
-    if os.path.exists(METRICS_FILE):
+    # 处理本地或S3路径
+    if metrics_file_path.startswith("s3://"):
+        # S3路径处理
+        # 先从S3下载现有数据（如果有）
+        s3_path = metrics_file_path.replace("s3://", "")
+        s3_bucket = s3_path.split("/")[0]
+        s3_key = "/".join(s3_path.split("/")[1:])
+
+        existing_metrics = []
+        temp_file = "temp_metrics.json"
+
         try:
-            with open(METRICS_FILE, 'r') as f:
+            # 尝试从S3下载现有文件
+            s3_client = boto3.client('s3')
+            s3_client.download_file(s3_bucket, s3_key, temp_file)
+
+            # 读取现有数据
+            with open(temp_file, 'r') as f:
                 existing_metrics = json.load(f)
         except Exception as e:
-            logger.error(f"读取指标文件时出错: {e}")
+            logger.info(f"无法从S3下载现有指标文件 (可能不存在): {e}")
 
-    # 确保是列表
-    if not isinstance(existing_metrics, list):
-        existing_metrics = []
+        # 确保是列表
+        if not isinstance(existing_metrics, list):
+            existing_metrics = []
 
-    # 添加新指标
-    existing_metrics.append(metrics)
+        # 添加新指标
+        existing_metrics.append(metrics)
 
-    # 限制历史记录大小
-    if len(existing_metrics) > 100:
-        existing_metrics = existing_metrics[-100:]
+        # 限制历史记录大小
+        if len(existing_metrics) > 100:
+            existing_metrics = existing_metrics[-100:]
 
-    # 保存到文件
-    try:
-        with open(METRICS_FILE, 'w') as f:
+        # 保存到临时文件
+        with open(temp_file, 'w') as f:
             json.dump(existing_metrics, f, indent=2)
-        logger.info(f"指标已保存到 {METRICS_FILE}")
-    except Exception as e:
-        logger.error(f"保存指标到文件时出错: {e}")
 
-    # 上传到S3
-    try:
-        s3_client = boto3.client('s3')
-        with open(METRICS_FILE, 'rb') as f:
-            s3_client.upload_fileobj(f, bucket_name, "results/online_metrics.json")
-        logger.info(f"指标已上传到S3 {bucket_name}/results/online_metrics.json")
-    except Exception as e:
-        logger.error(f"上传指标到S3出错: {e}")
+        # 上传到S3
+        try:
+            s3_client.upload_file(temp_file, s3_bucket, s3_key)
+            logger.info(f"指标已上传到S3: {metrics_file_path}")
+
+            # 删除临时文件
+            os.remove(temp_file)
+        except Exception as e:
+            logger.error(f"上传指标到S3出错: {e}")
+    else:
+        # 本地文件处理
+        # 确保目录存在
+        Path(os.path.dirname(metrics_file_path)).mkdir(parents=True, exist_ok=True)
+
+        # 从文件加载现有指标
+        existing_metrics = []
+        if os.path.exists(metrics_file_path):
+            try:
+                with open(metrics_file_path, 'r') as f:
+                    existing_metrics = json.load(f)
+            except Exception as e:
+                logger.error(f"读取指标文件时出错: {e}")
+
+        # 确保是列表
+        if not isinstance(existing_metrics, list):
+            existing_metrics = []
+
+        # 添加新指标
+        existing_metrics.append(metrics)
+
+        # 限制历史记录大小
+        if len(existing_metrics) > 100:
+            existing_metrics = existing_metrics[-100:]
+
+        # 保存到文件
+        try:
+            with open(metrics_file_path, 'w') as f:
+                json.dump(existing_metrics, f, indent=2)
+            logger.info(f"指标已保存到 {metrics_file_path}")
+        except Exception as e:
+            logger.error(f"保存指标到文件时出错: {e}")
 
 
 def save_model_checkpoint(model_type, model_obj, metrics, bucket_name="steam-project-data-976193243904"):
@@ -83,58 +133,117 @@ def save_model_checkpoint(model_type, model_obj, metrics, bucket_name="steam-pro
         metrics (dict): 性能指标字典
         bucket_name (str): S3存储桶名称
     """
-    # 创建检查点目录
-    checkpoint_dir = f"{MODEL_CHECKPOINT_DIR}/{model_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+    # 获取适当的路径
+    checkpoint_dir_base = get_adjusted_path(MODEL_CHECKPOINT_DIR)
+    checkpoint_timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-    # 保存模型
-    if model_type == "als" and model_obj is not None:
+    if checkpoint_dir_base.startswith("s3://"):
+        # S3路径处理
+        # 先在本地创建临时目录
+        temp_checkpoint_dir = f"temp_{model_type}_{checkpoint_timestamp}"
+        os.makedirs(temp_checkpoint_dir, exist_ok=True)
+
+        # 保存模型到临时目录
+        if model_type == "als" and model_obj is not None:
+            try:
+                model_obj.save(f"{temp_checkpoint_dir}/model")
+                logger.info(f"ALS模型已临时保存到 {temp_checkpoint_dir}")
+            except Exception as e:
+                logger.error(f"保存ALS模型到临时目录出错: {e}")
+
+        elif model_type == "tfidf" and model_obj is not None:
+            try:
+                # 保存TF-IDF向量化器
+                with open(f"{temp_checkpoint_dir}/tfidf_vectorizer.pkl", "wb") as f:
+                    pickle.dump(model_obj, f)
+
+                # 保存相似度矩阵和索引
+                from .models import cosine_sim, indices
+                if cosine_sim is not None:
+                    np.save(f"{temp_checkpoint_dir}/cosine_sim.npy", cosine_sim)
+
+                if indices is not None:
+                    with open(f"{temp_checkpoint_dir}/indices.pkl", "wb") as f:
+                        pickle.dump(indices, f)
+
+                logger.info(f"TF-IDF模型已临时保存到 {temp_checkpoint_dir}")
+            except Exception as e:
+                logger.error(f"保存TF-IDF模型到临时目录出错: {e}")
+
+        # 保存指标
+        with open(f"{temp_checkpoint_dir}/metrics.json", "w") as f:
+            json.dump(metrics, f, indent=2)
+
+        # 解析S3路径
+        s3_path = checkpoint_dir_base.replace("s3://", "")
+        s3_bucket = s3_path.split("/")[0]
+        s3_prefix = "/".join(s3_path.split("/")[1:]) if len(s3_path.split("/")) > 1 else ""
+
+        # 构建完整的S3目标路径
+        if s3_prefix:
+            s3_target_prefix = f"{s3_prefix}/{model_type}_{checkpoint_timestamp}"
+        else:
+            s3_target_prefix = f"{model_type}_{checkpoint_timestamp}"
+
+        # 上传到S3
         try:
-            model_obj.save(f"{checkpoint_dir}/model")
-            logger.info(f"ALS模型已保存到 {checkpoint_dir}")
+            s3_client = boto3.client('s3')
+            for root, dirs, files in os.walk(temp_checkpoint_dir):
+                for file in files:
+                    local_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_path, temp_checkpoint_dir)
+                    s3_key = f"{s3_target_prefix}/{relative_path}"
+
+                    try:
+                        s3_client.upload_file(local_path, s3_bucket, s3_key)
+                    except Exception as e:
+                        logger.error(f"上传文件 {local_path} 到S3出错: {e}")
+
+            logger.info(f"检查点已上传到S3 {checkpoint_dir_base}/{model_type}_{checkpoint_timestamp}")
+
+            # 清理临时目录
+            shutil.rmtree(temp_checkpoint_dir)
         except Exception as e:
-            logger.error(f"保存ALS模型出错: {e}")
+            logger.error(f"上传检查点到S3出错: {e}")
+            # 尝试清理临时目录
+            if os.path.exists(temp_checkpoint_dir):
+                shutil.rmtree(temp_checkpoint_dir)
+    else:
+        # 本地保存处理
+        # 创建检查点目录
+        checkpoint_dir = f"{checkpoint_dir_base}/{model_type}_{checkpoint_timestamp}"
+        Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
-    elif model_type == "tfidf" and model_obj is not None:
-        try:
-            # 保存TF-IDF向量化器
-            with open(f"{checkpoint_dir}/tfidf_vectorizer.pkl", "wb") as f:
-                pickle.dump(model_obj, f)
+        # 保存模型
+        if model_type == "als" and model_obj is not None:
+            try:
+                model_obj.save(f"{checkpoint_dir}/model")
+                logger.info(f"ALS模型已保存到 {checkpoint_dir}")
+            except Exception as e:
+                logger.error(f"保存ALS模型出错: {e}")
 
-            # 保存相似度矩阵和索引
-            from .models import cosine_sim, indices
-            if cosine_sim is not None:
-                np.save(f"{checkpoint_dir}/cosine_sim.npy", cosine_sim)
+        elif model_type == "tfidf" and model_obj is not None:
+            try:
+                # 保存TF-IDF向量化器
+                with open(f"{checkpoint_dir}/tfidf_vectorizer.pkl", "wb") as f:
+                    pickle.dump(model_obj, f)
 
-            if indices is not None:
-                with open(f"{checkpoint_dir}/indices.pkl", "wb") as f:
-                    pickle.dump(indices, f)
+                # 保存相似度矩阵和索引
+                from .models import cosine_sim, indices
+                if cosine_sim is not None:
+                    np.save(f"{checkpoint_dir}/cosine_sim.npy", cosine_sim)
 
-            logger.info(f"TF-IDF模型已保存到 {checkpoint_dir}")
-        except Exception as e:
-            logger.error(f"保存TF-IDF模型出错: {e}")
+                if indices is not None:
+                    with open(f"{checkpoint_dir}/indices.pkl", "wb") as f:
+                        pickle.dump(indices, f)
 
-    # 保存指标
-    with open(f"{checkpoint_dir}/metrics.json", "w") as f:
-        json.dump(metrics, f, indent=2)
+                logger.info(f"TF-IDF模型已保存到 {checkpoint_dir}")
+            except Exception as e:
+                logger.error(f"保存TF-IDF模型出错: {e}")
 
-    # 上传到S3
-    try:
-        s3_client = boto3.client('s3')
-        for root, dirs, files in os.walk(checkpoint_dir):
-            for file in files:
-                local_path = os.path.join(root, file)
-                relative_path = os.path.relpath(local_path, MODEL_CHECKPOINT_DIR)
-                s3_key = f"online_checkpoints/{model_type}/{relative_path}"
-
-                try:
-                    s3_client.upload_file(local_path, bucket_name, s3_key)
-                except Exception as e:
-                    logger.error(f"上传文件 {local_path} 到S3出错: {e}")
-
-        logger.info(f"检查点已上传到S3 {bucket_name}/online_checkpoints/{model_type}")
-    except Exception as e:
-        logger.error(f"上传检查点到S3出错: {e}")
+        # 保存指标
+        with open(f"{checkpoint_dir}/metrics.json", "w") as f:
+            json.dump(metrics, f, indent=2)
 
 
 def load_model_from_s3(s3_path, local_path="temp_model", bucket_name="steam-project-data-976193243904"):
@@ -203,9 +312,17 @@ def clean_old_checkpoints(max_checkpoints=5):
     Args:
         max_checkpoints (int): 每种类型要保留的最大检查点数
     """
+    # 获取调整后的路径
+    checkpoint_dir_path = get_adjusted_path(MODEL_CHECKPOINT_DIR)
+
+    # 如果是S3路径，跳过清理（S3存储成本低，可以保留更多历史）
+    if checkpoint_dir_path.startswith("s3://"):
+        logger.info("检查点存储在S3，跳过本地清理")
+        return
+
     try:
         # 获取检查点目录
-        checkpoint_dir = Path(MODEL_CHECKPOINT_DIR)
+        checkpoint_dir = Path(checkpoint_dir_path)
         if not checkpoint_dir.exists():
             return
 

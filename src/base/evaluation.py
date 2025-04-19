@@ -1,10 +1,12 @@
-# src/evaluation.py
+# src/base/evaluation.py
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
 import os
+import boto3
+from src.utils.aws_utils import get_storage_path, is_emr_cluster_mode, ensure_dir
 
 
 def calculate_precision_recall(recommended_items, relevant_items):
@@ -145,7 +147,7 @@ def evaluate_recommendations(recommender_func, test_users, games_df, test_data, 
     # 计算F1分数
     if avg_metrics['precision'] > 0 and avg_metrics['recall'] > 0:
         avg_metrics['f1'] = 2 * (avg_metrics['precision'] * avg_metrics['recall']) / (
-                    avg_metrics['precision'] + avg_metrics['recall'])
+                avg_metrics['precision'] + avg_metrics['recall'])
 
     return avg_metrics
 
@@ -188,16 +190,36 @@ def visualize_comparison(results, save_path=None):
 
     # 保存图表
     if save_path:
-        plt.savefig(save_path)
-        print(f"图表已保存至: {save_path}")
+        if save_path.startswith("s3://"):
+            # 先保存到本地临时文件，然后上传到S3
+            temp_path = "temp_figure.png"
+            plt.savefig(temp_path)
+
+            # 解析S3路径
+            s3_path = save_path.replace("s3://", "")
+            bucket_name = s3_path.split("/")[0]
+            key = "/".join(s3_path.split("/")[1:])
+
+            # 上传到S3
+            try:
+                s3_client = boto3.client('s3')
+                s3_client.upload_file(temp_path, bucket_name, key)
+                print(f"图表已保存至S3: {save_path}")
+                # 删除临时文件
+                os.remove(temp_path)
+            except Exception as e:
+                print(f"上传图表到S3时出错: {e}")
+        else:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            plt.savefig(save_path)
+            print(f"图表已保存至: {save_path}")
 
     plt.show()
 
 
 def save_evaluation_results(results, file_path):
     """保存评估结果到JSON文件"""
-    # 确保目录存在
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
     # 将NumPy值转换为Python标准类型
     def convert_to_serializable(obj):
@@ -215,8 +237,34 @@ def save_evaluation_results(results, file_path):
     for model, metrics in results.items():
         serializable_results[model] = {k: convert_to_serializable(v) for k, v in metrics.items()}
 
-    # 保存到文件
-    with open(file_path, 'w') as f:
-        json.dump(serializable_results, f, indent=4)
+    # 根据目标路径选择保存方式
+    if file_path.startswith("s3://"):
+        # S3路径 - 先写入临时文件，然后上传
+        temp_file = "temp_evaluation_results.json"
+        with open(temp_file, 'w') as f:
+            json.dump(serializable_results, f, indent=4)
 
-    print(f"评估结果已保存至: {file_path}")
+        # 解析S3路径
+        s3_path = file_path.replace("s3://", "")
+        bucket_name = s3_path.split("/")[0]
+        key = "/".join(s3_path.split("/")[1:])
+
+        # 上传到S3
+        try:
+            s3_client = boto3.client('s3')
+            s3_client.upload_file(temp_file, bucket_name, key)
+            print(f"评估结果已保存至S3: {file_path}")
+            # 删除临时文件
+            os.remove(temp_file)
+        except Exception as e:
+            print(f"上传评估结果到S3时出错: {e}")
+    else:
+        # 本地路径 - 直接写入文件
+        # 确保目录存在
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+        # 保存到文件
+        with open(file_path, 'w') as f:
+            json.dump(serializable_results, f, indent=4)
+
+        print(f"评估结果已保存至: {file_path}")

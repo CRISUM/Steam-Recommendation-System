@@ -3,6 +3,7 @@ import os
 import json
 import time
 import sys
+
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 from src import initialize_spark, load_data, preprocess_data, split_data
 from src import build_als_model, evaluate_als_model, tune_als_parameters
@@ -11,50 +12,95 @@ from src import build_hybrid_recommender
 from src import compare_recommenders, visualize_comparison, save_evaluation_results
 from src import build_popularity_model, build_content_based_cold_start
 import boto3
+from src.utils.aws_utils import get_storage_path, is_emr_cluster_mode, ensure_dir, save_to_storage
 
 
 def save_checkpoint(model, step, metrics, bucket_name="steam-project-data-976193243904"):
     """保存训练检查点到本地和S3"""
-    checkpoint_path = os.path.join("checkpoints", f"checkpoint_{step}")
-    os.makedirs(checkpoint_path, exist_ok=True)
+    # 使用通用路径函数获取适当的路径
+    checkpoint_path = get_storage_path(f"checkpoints/checkpoint_{step}")
 
-    # 保存模型
-    model.save(os.path.join(checkpoint_path, "model"))
+    # 如果是本地模式，确保目录存在
+    if not checkpoint_path.startswith("s3://"):
+        os.makedirs(checkpoint_path, exist_ok=True)
 
-    # 保存训练进度和指标
-    with open(os.path.join(checkpoint_path, "metrics.json"), 'w') as f:
-        json.dump(metrics, f)
+        # 保存模型
+        model.save(os.path.join(checkpoint_path, "model"))
 
-    # 上传到S3
-    try:
-        s3_client = boto3.client('s3')
-        for root, dirs, files in os.walk(checkpoint_path):
-            for file in files:
-                local_path = os.path.join(root, file)
-                relative_path = os.path.relpath(local_path, "checkpoints")
-                s3_key = f"checkpoints/{relative_path}"
-                s3_client.upload_file(local_path, bucket_name, s3_key)
-        print(f"检查点 {step} 已保存到S3")
-    except Exception as e:
-        print(f"保存检查点到S3时出错: {e}")
+        # 保存训练进度和指标
+        with open(os.path.join(checkpoint_path, "metrics.json"), 'w') as f:
+            json.dump(metrics, f)
+
+        # 上传到S3
+        try:
+            s3_client = boto3.client('s3')
+            for root, dirs, files in os.walk(checkpoint_path):
+                for file in files:
+                    local_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_path, "checkpoints")
+                    s3_key = f"checkpoints/{relative_path}"
+                    s3_client.upload_file(local_path, bucket_name, s3_key)
+            print(f"检查点 {step} 已保存到S3")
+        except Exception as e:
+            print(f"保存检查点到S3时出错: {e}")
+    else:
+        # 直接保存到S3
+        s3_bucket = checkpoint_path.split("/")[2]
+        s3_prefix = "/".join(checkpoint_path.split("/")[3:])
+
+        # 保存模型到S3
+        # 注意：需要先本地保存然后上传，因为Spark的save方法不直接支持S3路径
+        temp_path = f"temp_checkpoint_{step}"
+        os.makedirs(temp_path, exist_ok=True)
+
+        try:
+            # 本地临时保存
+            model.save(os.path.join(temp_path, "model"))
+
+            # 写入metrics.json
+            with open(os.path.join(temp_path, "metrics.json"), 'w') as f:
+                json.dump(metrics, f)
+
+            # 上传到S3
+            s3_client = boto3.client('s3')
+            for root, dirs, files in os.walk(temp_path):
+                for file in files:
+                    local_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_path, temp_path)
+                    s3_key = f"{s3_prefix}/{relative_path}"
+                    s3_client.upload_file(local_path, s3_bucket, s3_key)
+
+            # 清理临时文件
+            import shutil
+            shutil.rmtree(temp_path)
+
+            print(f"检查点 {step} 已保存到S3: {checkpoint_path}")
+        except Exception as e:
+            print(f"保存检查点到S3时出错: {e}")
+
+            # 清理临时文件
+            import shutil
+            if os.path.exists(temp_path):
+                shutil.rmtree(temp_path)
+
 
 def main():
     # 记录开始时间
     start_time = time.time()
 
-    # 数据路径
-    # data_path = "data"
-    # 数据路径 - 现在指向S3
+    # 数据路径 - 始终指向S3
     data_path = "s3://steam-project-data-976193243904"
 
-    # 结果保存路径
-    results_path = "results"
-    models_path = "models"
+    # 结果保存路径 - 根据环境使用本地或S3
+    results_path = get_storage_path("results")
+    figures_path = get_storage_path("results/figures")
+    models_path = get_storage_path("models")
 
-    # 确保目录存在
-    os.makedirs(results_path, exist_ok=True)
-    os.makedirs(os.path.join(results_path, "figures"), exist_ok=True)
-    os.makedirs(models_path, exist_ok=True)
+    # 确保本地目录存在 (如果在本地运行)
+    if not is_emr_cluster_mode():
+        os.makedirs(results_path, exist_ok=True)
+        os.makedirs(figures_path, exist_ok=True)
+        os.makedirs(models_path, exist_ok=True)
 
     # 初始化Spark
     print("初始化Spark...")
@@ -164,51 +210,62 @@ def main():
 
     # 可视化比较结果
     print("可视化评估结果...")
+    figure_path = os.path.join(figures_path, "model_comparison.png") if not figures_path.startswith(
+        "s3://") else f"{figures_path}/model_comparison.png"
     visualize_comparison(
         evaluation_results,
-        save_path=os.path.join(results_path, "figures", "model_comparison.png")
+        save_path=figure_path
     )
 
     # 保存评估结果
+    eval_results_path = os.path.join(results_path, "evaluation_results.json") if not results_path.startswith(
+        "s3://") else f"{results_path}/evaluation_results.json"
     save_evaluation_results(
         evaluation_results,
-        os.path.join(results_path, "evaluation_results.json")
+        eval_results_path
     )
 
     # 保存模型和相关数据
     print("保存模型...")
 
     # 保存ALS模型
-    #try:
-    #    als_model.save(os.path.join(models_path, "als_model"))
-    #    print("ALS模型已保存")
-    #except Exception as e:
-    #    print(f"保存ALS模型时出错: {e}")
+    als_model_path = os.path.join(models_path, "als_model") if not models_path.startswith(
+        "s3://") else f"{models_path}/als_model"
 
-    results_path = "results"
-    models_path = "models"
-
-    # 保存ALS模型
-    # main.py中的保存模型部分
     try:
-        # 本地保存
-        als_model.save(os.path.join(models_path, "als_model"))
-        print("ALS模型已保存到本地")
+        # 本地保存或创建临时路径
+        if not models_path.startswith("s3://"):
+            # 本地保存
+            als_model.save(als_model_path)
+            print("ALS模型已保存到本地")
+        else:
+            # S3路径 - 需要先临时保存然后上传
+            temp_model_dir = "temp_als_model"
+            os.makedirs(temp_model_dir, exist_ok=True)
 
-        # 保存到S3
-        s3_client = boto3.client('s3')
-        bucket_name = "steam-project-data-976193243904"  # 确保这个名称一致
+            # 本地临时保存
+            als_model.save(temp_model_dir)
+            print("ALS模型已临时保存到本地")
 
-        # 如果模型文件夹存在，上传其中的所有文件
-        model_dir = os.path.join(models_path, "als_model")
-        if os.path.exists(model_dir):
-            for root, dirs, files in os.walk(model_dir):
+            # 解析S3路径
+            s3_parts = models_path.replace("s3://", "").split("/")
+            bucket_name = s3_parts[0]
+            prefix = "/".join(s3_parts[1:]) if len(s3_parts) > 1 else ""
+
+            # 上传到S3
+            s3_client = boto3.client('s3')
+            for root, dirs, files in os.walk(temp_model_dir):
                 for file in files:
                     local_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(local_path, models_path)
-                    s3_key = f"models/{relative_path}"
+                    relative_path = os.path.relpath(local_path, temp_model_dir)
+                    s3_key = f"{prefix}/als_model/{relative_path}" if prefix else f"als_model/{relative_path}"
                     s3_client.upload_file(local_path, bucket_name, s3_key)
-            print("ALS模型已上传到S3")
+
+            print(f"ALS模型已上传到S3: {models_path}/als_model")
+
+            # 清理临时目录
+            import shutil
+            shutil.rmtree(temp_model_dir)
 
     except Exception as e:
         print(f"保存ALS模型时出错: {e}")

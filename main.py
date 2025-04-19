@@ -45,7 +45,7 @@ def main():
     # 数据路径
     # data_path = "data"
     # 数据路径 - 现在指向S3
-    data_path = "s3a://steam-project-data-976193243904"
+    data_path = "s3://steam-project-data-976193243904"
 
     # 结果保存路径
     results_path = "results"

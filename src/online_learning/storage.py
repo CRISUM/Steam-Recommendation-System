@@ -150,8 +150,8 @@ def load_model_from_s3(s3_path, local_path="temp_model", bucket_name="steam-proj
         str: 本地模型路径
     """
     # 解析S3路径
-    if s3_path.startswith('s3a://'):
-        parts = s3_path.replace('s3a://', '').split('/', 1)
+    if s3_path.startswith('s3://'):
+        parts = s3_path.replace('s3://', '').split('/', 1)
         if len(parts) > 1:
             bucket_name = parts[0]
             key_prefix = parts[1]

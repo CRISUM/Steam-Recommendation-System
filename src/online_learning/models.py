@@ -44,9 +44,10 @@ def initialize_spark():
         # 检查是否在EMR集群上运行
         # 如果在EMR上，不需要显式设置master
         # 如果在本地环境，则可以设置master为local
-        if not is_emr_cluster_mode():
+        if is_emr_cluster_mode():
+            builder = builder.master("yarn")
+        else:
             builder = builder.master("local[*]")
-            return 0;
 
         # 添加其他配置
         spark = builder \

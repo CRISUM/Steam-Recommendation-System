@@ -28,8 +28,12 @@ def initialize_spark(app_name="SteamRecommendationSystem"):
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
         .config("spark.hadoop.fs.s3a.fast.upload", "true") \
         .config("spark.hadoop.fs.s3a.connection.maximum", "100") \
-        .config("spark.executor.memory", "4g") \
-        .config("spark.driver.memory", "4g") \
+        .config("spark.executor.memory", "16g") \
+        .config("spark.driver.memory", "16g") \
+        .config("spark.driver.maxResultSize", "8g") \
+        .config("spark.memory.fraction", "0.8") \
+        .config("spark.executor.memoryOverhead", "4g") \
+        .config("spark.yarn.executor.memoryOverhead", "4g") \
         .getOrCreate()
 
     return spark
@@ -150,54 +154,42 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
         # 填充缺失值
         games_with_metadata['description'] = games_with_metadata['description'].fillna('')
 
-        # 确保标签是列表 - 修复的部分
-        def process_tags(x):
-            # 首先，如果输入是数组或Series，直接转换为列表并返回第一个元素（如果有）
-            if hasattr(x, '__iter__') and not isinstance(x, (str, dict)):
-                if hasattr(x, 'tolist'):  # numpy数组转换方法
-                    items = x.tolist()
-                else:
-                    items = list(x)
-                # 返回第一个元素，或空列表
-                return items[0] if items else []
+        # 增加批处理逻辑，分段处理tags
+        batch_size = 10000
+        total_batches = len(games_with_metadata) // batch_size + 1
 
-                # 处理单个值
-            if pd.isna(x) or x is None:
-                return []
+        for i in range(total_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, len(games_with_metadata))
+            print(f"处理标签批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
 
-            # 若已经是列表，直接返回
-            if isinstance(x, list):
-                return x
-
-            # 若是字符串且可能是JSON，尝试解析
-            if isinstance(x, str):
-                if x.strip() == '':
-                    return []
-                try:
-                    parsed = json.loads(x.strip())
-                    return parsed if isinstance(parsed, list) else []
-                except:
-                    # 不是有效的JSON，尝试将其作为单个标签
-                    return [x]
-
-            # 其他情况返回空列表
-            return []
-
-        games_with_metadata['tags'] = games_with_metadata['tags'].apply(process_tags)
+            # 只处理当前批次
+            games_with_metadata.loc[start_idx:end_idx, 'tags'] = \
+                games_with_metadata.loc[start_idx:end_idx, 'tags'].apply(process_tags)
 
         print(f"处理后的游戏数据: {len(games_with_metadata)} 条记录")
     else:
         games_with_metadata = games_df.copy() if not games_df.empty else pd.DataFrame()
         print("警告: 游戏数据或元数据为空")
 
-    # 处理推荐数据
+    # 处理推荐数据 - 同样分批处理
     if not recommendations_df.empty:
         # 将is_recommended和hours转换为评分
         if 'rating' not in recommendations_df.columns:
-            recommendations_df['rating'] = recommendations_df.apply(
-                lambda row: min(10.0, row['hours'] / 10) * (1.5 if row['is_recommended'] else 0.5),
-                axis=1
-            )
+            # 分批处理评分
+            batch_size = 1000000  # 100万条记录一批
+            total_batches = len(recommendations_df) // batch_size + 1
+
+            for i in range(total_batches):
+                start_idx = i * batch_size
+                end_idx = min((i + 1) * batch_size, len(recommendations_df))
+                print(f"处理评分批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+
+                recommendations_df.loc[start_idx:end_idx, 'rating'] = \
+                    recommendations_df.loc[start_idx:end_idx].apply(
+                        lambda row: min(10.0, row['hours'] / 10) * (1.5 if row['is_recommended'] else 0.5),
+                        axis=1
+                    )
 
         # 处理后的推荐数据
         processed_recommendations = recommendations_df.copy()
@@ -210,16 +202,72 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
     spark_ratings = None
     if spark is not None and not processed_recommendations.empty:
         try:
-            # 创建Spark DataFrame
-            spark_ratings = spark.createDataFrame(
-                processed_recommendations[['user_id', 'app_id', 'rating']]
-            )
-            print(f"创建Spark评分数据: {spark_ratings.count()} 条记录")
+            # 创建Spark DataFrame - 如果数据较大，分批转换
+            if len(processed_recommendations) > 10000000:  # 1000万条记录以上
+                # 分批转换为Spark DataFrame
+                print("分批转换为Spark DataFrame...")
+                batch_size = 5000000  # 500万条记录一批
+                total_batches = len(processed_recommendations) // batch_size + 1
+
+                for i in range(total_batches):
+                    start_idx = i * batch_size
+                    end_idx = min((i + 1) * batch_size, len(processed_recommendations))
+                    print(f"转换批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+
+                    batch_df = processed_recommendations.iloc[start_idx:end_idx]
+                    batch_spark = spark.createDataFrame(
+                        batch_df[['user_id', 'app_id', 'rating']]
+                    )
+
+                    if spark_ratings is None:
+                        spark_ratings = batch_spark
+                    else:
+                        spark_ratings = spark_ratings.union(batch_spark)
+
+                print(f"创建Spark评分数据: {spark_ratings.count()} 条记录")
+            else:
+                # 直接转换
+                spark_ratings = spark.createDataFrame(
+                    processed_recommendations[['user_id', 'app_id', 'rating']]
+                )
+                print(f"创建Spark评分数据: {spark_ratings.count()} 条记录")
         except Exception as e:
             print(f"创建Spark DataFrame时出错: {e}")
 
     return games_with_metadata, spark_ratings, processed_recommendations
 
+
+def process_tags(x):
+    # 首先，如果输入是数组或Series，直接转换为列表并返回第一个元素（如果有）
+    if hasattr(x, '__iter__') and not isinstance(x, (str, dict)):
+        if hasattr(x, 'tolist'):  # numpy数组转换方法
+            items = x.tolist()
+        else:
+            items = list(x)
+        # 返回第一个元素，或空列表
+        return items[0] if items else []
+
+        # 处理单个值
+    if pd.isna(x) or x is None:
+        return []
+
+    # 若已经是列表，直接返回
+    if isinstance(x, list):
+        return x
+
+    # 若是字符串且可能是JSON，尝试解析
+    if isinstance(x, str):
+        if x.strip() == '':
+            return []
+        try:
+            parsed = json.loads(x.strip())
+            return parsed if isinstance(parsed, list) else []
+        except:
+            # 不是有效的JSON，尝试将其作为单个标签
+            return [x]
+
+    # 其他情况返回空列表
+    return []
 
 def split_data(data, test_ratio=0.2, random_state=42):
     """将数据分割为训练集和测试集"""

@@ -140,6 +140,34 @@ def main():
     print("分割数据为训练集和测试集...")
     train_data, test_data = split_data(processed_recommendations)
 
+    # 保存训练和测试数据
+    data_dir = get_storage_path("data/processed")
+    if not data_dir.startswith("s3://"):
+        os.makedirs(data_dir, exist_ok=True)
+
+        # 保存为CSV
+        train_data.to_csv(f"{data_dir}/train_data.csv", index=False)
+        test_data.to_csv(f"{data_dir}/test_data.csv", index=False)
+        print(f"训练和测试数据已保存到 {data_dir}")
+    else:
+        # S3保存逻辑
+        s3_bucket = data_dir.replace("s3://", "").split("/")[0]
+        s3_prefix = "/".join(data_dir.replace("s3://", "").split("/")[1:])
+
+        # 创建临时文件
+        train_data.to_csv("temp_train_data.csv", index=False)
+        test_data.to_csv("temp_test_data.csv", index=False)
+
+        # 上传到S3
+        s3_client = boto3.client('s3')
+        s3_client.upload_file("temp_train_data.csv", s3_bucket, f"{s3_prefix}/train_data.csv")
+        s3_client.upload_file("temp_test_data.csv", s3_bucket, f"{s3_prefix}/test_data.csv")
+
+        # 删除临时文件
+        os.remove("temp_train_data.csv")
+        os.remove("temp_test_data.csv")
+        print(f"训练和测试数据已上传到 S3: {data_dir}")
+
     # 创建Spark格式的训练和测试数据
     spark_train = spark.createDataFrame(train_data[['user_id', 'app_id', 'rating']])
     spark_test = spark.createDataFrame(test_data[['user_id', 'app_id', 'rating']])

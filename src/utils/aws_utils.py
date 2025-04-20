@@ -13,17 +13,7 @@ def get_s3_client():
 
 def is_emr_cluster_mode():
     """检测是否在EMR集群上运行"""
-    # 检查常见的EMR环境变量或目录
-    emr_indicators = [
-        "SPARK_EXECUTOR_MEMORY" in os.environ,  # Spark环境变量
-        "AWS_EMR_CLUSTER_ID" in os.environ,  # EMR集群ID
-        "AWS_EMR_HOME" in os.environ,  # EMR主目录
-        os.path.exists("/emr"),  # EMR文件系统标记
-        os.path.exists("/mnt/var/lib/hadoop")  # EMR Hadoop目录
-    ]
-
-    return any(emr_indicators)
-
+    return "AWS_EMR_CLUSTER_ID" in os.environ
 
 def get_storage_path(local_path, s3_bucket="steam-project-data-976193243904"):
     """

@@ -152,24 +152,36 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
 
         # 确保标签是列表 - 修复的部分
         def process_tags(x):
-            # 检查是否为空或NaN
-            if pd.isna(x):
+            # 首先，如果输入是数组或Series，直接转换为列表并返回第一个元素（如果有）
+            if hasattr(x, '__iter__') and not isinstance(x, (str, dict)):
+                if hasattr(x, 'tolist'):  # numpy数组转换方法
+                    items = x.tolist()
+                else:
+                    items = list(x)
+                # 返回第一个元素，或空列表
+                return items[0] if items else []
+
+                # 处理单个值
+            if pd.isna(x) or x is None:
                 return []
+
             # 若已经是列表，直接返回
-            elif isinstance(x, list):
+            if isinstance(x, list):
                 return x
-            # 若是字符串，检查是否为空或尝试解析JSON
-            elif isinstance(x, str):
-                if x == '':
+
+            # 若是字符串且可能是JSON，尝试解析
+            if isinstance(x, str):
+                if x.strip() == '':
                     return []
                 try:
-                    parsed = json.loads(x)
+                    parsed = json.loads(x.strip())
                     return parsed if isinstance(parsed, list) else []
                 except:
-                    return []
+                    # 不是有效的JSON，尝试将其作为单个标签
+                    return [x]
+
             # 其他情况返回空列表
-            else:
-                return []
+            return []
 
         games_with_metadata['tags'] = games_with_metadata['tags'].apply(process_tags)
 

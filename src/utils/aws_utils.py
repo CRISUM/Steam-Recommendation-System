@@ -12,16 +12,36 @@ def get_s3_client():
 
 
 def is_emr_cluster_mode():
-    """检测是否在EMR集群上运行"""
-    is_cluster = "AWS_EMR_CLUSTER_ID" in os.environ
-    mode_str = "Cluster mode" if is_cluster else "Local mode"
+    """
+    Detect if running on an EMR cluster.
 
-    # Print to stdout
-    print(f"Running in: {mode_str}")
+    Returns:
+        bool: True if running on EMR cluster, False otherwise
+    """
+    # 检查环境变量
+    cluster_vars = {
+        "AWS_EMR_CLUSTER_ID": os.environ.get("AWS_EMR_CLUSTER_ID"),
+        "YARN_CONF_DIR": os.environ.get("YARN_CONF_DIR"),
+        "HADOOP_CONF_DIR": os.environ.get("HADOOP_CONF_DIR")
+    }
 
-    # Print to stderr
-    import sys
-    print(f"Environment detected: {mode_str}", file=sys.stderr)
+    # 输出诊断信息
+    print("\nEMR ENVIRONMENT DIAGNOSTIC:")
+    print("--------------------------")
+    for var_name, var_value in cluster_vars.items():
+        print(f"{var_name}: {'SET' if var_value else 'NOT SET'}")
+
+    # 检查文件系统特征
+    hadoop_paths = ["/etc/hadoop", "/usr/lib/hadoop"]
+    for path in hadoop_paths:
+        print(f"Path {path} exists: {os.path.exists(path)}")
+
+    # 判断是否在EMR上
+    is_cluster = "AWS_EMR_CLUSTER_ID" in os.environ or os.path.exists("/etc/hadoop/conf")
+
+    # 明确输出结果
+    result = "RUNNING ON EMR CLUSTER" if is_cluster else "RUNNING IN LOCAL ENVIRONMENT"
+    print(f"\n>>> {result} <<<\n")
 
     return is_cluster
 

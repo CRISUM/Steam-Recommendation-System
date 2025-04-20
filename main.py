@@ -5,6 +5,26 @@ import time
 import sys
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+# 添加初始环境诊断
+print("\n" + "="*50)
+print("STEAM RECOMMENDATION SYSTEM - ENVIRONMENT DIAGNOSTIC")
+print("="*50)
+print(f"Current working directory: {os.getcwd()}")
+print(f"Python version: {sys.version}")
+print(f"Script path: {os.path.abspath(__file__)}")
+
+# 检查主要环境变量
+env_vars = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_EMR_CLUSTER_ID",
+            "HADOOP_CONF_DIR", "YARN_CONF_DIR", "SPARK_HOME"]
+print("\nEnvironment variables:")
+for var in env_vars:
+    status = "SET" if os.environ.get(var) else "NOT SET"
+    print(f"  {var}: {status}")
+
+# 标记诊断部分结束
+print("="*50 + "\n")
+
 from src import initialize_spark, load_data, preprocess_data, split_data
 from src import build_als_model, evaluate_als_model, tune_als_parameters
 from src import build_tfidf_model

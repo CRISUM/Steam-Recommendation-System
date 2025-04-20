@@ -33,6 +33,64 @@ def initialize_spark(app_name="SteamRecommendationSystem"):
     return spark
 
 
+def load_data_from_s3(bucket_name, prefix):
+    """从S3加载数据文件"""
+    print(f"正在从S3 {bucket_name}/{prefix} 加载数据...")
+
+    s3_client = boto3.client('s3')
+
+    # 读取CSV文件
+    try:
+        # 加载游戏数据
+        games_obj = s3_client.get_object(Bucket=bucket_name, Key=f"{prefix}games.csv")
+        games_df = pd.read_csv(io.BytesIO(games_obj['Body'].read()))
+        print(f"已从S3加载 {len(games_df)} 个游戏")
+    except Exception as e:
+        print(f"从S3加载游戏数据时出错: {e}")
+        games_df = pd.DataFrame()
+
+    try:
+        # 加载用户数据
+        users_obj = s3_client.get_object(Bucket=bucket_name, Key=f"{prefix}users.csv")
+        users_df = pd.read_csv(io.BytesIO(users_obj['Body'].read()))
+        print(f"已从S3加载 {len(users_df)} 个用户")
+    except Exception as e:
+        print(f"从S3加载用户数据时出错: {e}")
+        users_df = pd.DataFrame()
+
+    try:
+        # 加载评价数据
+        recommendations_obj = s3_client.get_object(Bucket=bucket_name, Key=f"{prefix}recommendations.csv")
+        recommendations_df = pd.read_csv(io.BytesIO(recommendations_obj['Body'].read()))
+        print(f"已从S3加载 {len(recommendations_df)} 条评价")
+    except Exception as e:
+        print(f"从S3加载评价数据时出错: {e}")
+        recommendations_df = pd.DataFrame()
+
+    # 读取JSON元数据
+    try:
+        metadata_obj = s3_client.get_object(Bucket=bucket_name, Key=f"{prefix}games_metadata.json")
+        metadata_content = metadata_obj['Body'].read().decode('utf-8')
+        metadata_list = []
+
+        for line in metadata_content.split("\n"):
+            line = line.strip()
+            if line:
+                try:
+                    metadata_list.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+        metadata_df = pd.DataFrame(metadata_list)
+        print(f"已从S3加载 {len(metadata_df)} 条游戏元数据")
+    except Exception as e:
+        print(f"从S3加载元数据时出错: {e}")
+        metadata_df = pd.DataFrame()
+
+    print(f"从S3数据加载完成")
+    return games_df, users_df, recommendations_df, metadata_df
+
+
 def load_data(data_path=None):
     """加载CSV和JSON数据，支持从本地或S3加载"""
 

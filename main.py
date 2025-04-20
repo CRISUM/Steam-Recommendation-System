@@ -4,6 +4,8 @@ import json
 import time
 import sys
 
+import pandas as pd
+
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 # 添加初始环境诊断
@@ -103,6 +105,93 @@ def save_checkpoint(model, step, metrics, bucket_name="steam-project-data-976193
             if os.path.exists(temp_path):
                 shutil.rmtree(temp_path)
 
+def load_intermediate_data(data_path):
+    """检查并加载中间数据（如果存在）"""
+    # 调整为合适的存储路径
+    processed_path = get_storage_path(f"{data_path}/processed")
+
+    train_path = f"{processed_path}/train_data.csv"
+    test_path = f"{processed_path}/test_data.csv"
+    games_meta_path = f"{processed_path}/games_with_metadata.csv"
+
+    # 检查是否为S3路径
+    if processed_path.startswith("s3://"):
+        # S3路径处理
+        s3_bucket = processed_path.replace("s3://", "").split("/")[0]
+        s3_prefix = "/".join(processed_path.replace("s3://", "").split("/")[1:])
+        s3_client = boto3.client('s3')
+
+        try:
+            # 检查文件是否存在
+            s3_client.head_object(Bucket=s3_bucket, Key=f"{s3_prefix}/train_data.csv")
+            s3_client.head_object(Bucket=s3_bucket, Key=f"{s3_prefix}/test_data.csv")
+            s3_client.head_object(Bucket=s3_bucket, Key=f"{s3_prefix}/games_with_metadata.csv")
+
+            # 从S3下载数据
+            print("从S3加载中间数据...")
+            # 创建临时文件
+            train_data = pd.read_csv(f"s3://{s3_bucket}/{s3_prefix}/train_data.csv")
+            test_data = pd.read_csv(f"s3://{s3_bucket}/{s3_prefix}/test_data.csv")
+            games_with_metadata = pd.read_csv(f"s3://{s3_bucket}/{s3_prefix}/games_with_metadata.csv")
+
+            print(f"已从S3加载中间数据: 训练集 {len(train_data)} 条, 测试集 {len(test_data)} 条")
+            return games_with_metadata, train_data, test_data, True
+
+        except Exception as e:
+            print(f"无法从S3加载中间数据: {e}")
+            return None, None, None, False
+    else:
+        # 本地路径处理
+        if os.path.exists(train_path) and os.path.exists(test_path) and os.path.exists(games_meta_path):
+            print("从本地加载中间数据...")
+            train_data = pd.read_csv(train_path)
+            test_data = pd.read_csv(test_path)
+            games_with_metadata = pd.read_csv(games_meta_path)
+
+            print(f"已加载中间数据: 训练集 {len(train_data)} 条, 测试集 {len(test_data)} 条")
+            return games_with_metadata, train_data, test_data, True
+        else:
+            print("未找到中间数据，将重新处理原始数据")
+            return None, None, None, False
+
+def save_intermediate_data(games_with_metadata, train_data, test_data, data_path):
+    """保存中间数据到指定路径"""
+    # 调整为合适的存储路径
+    processed_path = get_storage_path(f"{data_path}/processed")
+
+    print(f"保存中间数据到 {processed_path}...")
+
+    if processed_path.startswith("s3://"):
+        # S3保存逻辑
+        s3_bucket = processed_path.replace("s3://", "").split("/")[0]
+        s3_prefix = "/".join(processed_path.replace("s3://", "").split("/")[1:])
+
+        # 创建临时文件
+        train_data.to_csv("temp_train_data.csv", index=False)
+        test_data.to_csv("temp_test_data.csv", index=False)
+        games_with_metadata.to_csv("temp_games_with_metadata.csv", index=False)
+
+        # 上传到S3
+        s3_client = boto3.client('s3')
+        s3_client.upload_file("temp_train_data.csv", s3_bucket, f"{s3_prefix}/train_data.csv")
+        s3_client.upload_file("temp_test_data.csv", s3_bucket, f"{s3_prefix}/test_data.csv")
+        s3_client.upload_file("temp_games_with_metadata.csv", s3_bucket, f"{s3_prefix}/games_with_metadata.csv")
+
+        # 删除临时文件
+        os.remove("temp_train_data.csv")
+        os.remove("temp_test_data.csv")
+        os.remove("temp_games_with_metadata.csv")
+
+        print(f"中间数据已上传到 S3: {processed_path}")
+    else:
+        # 本地保存逻辑
+        os.makedirs(processed_path, exist_ok=True)
+
+        train_data.to_csv(f"{processed_path}/train_data.csv", index=False)
+        test_data.to_csv(f"{processed_path}/test_data.csv", index=False)
+        games_with_metadata.to_csv(f"{processed_path}/games_with_metadata.csv", index=False)
+
+        print(f"中间数据已保存到: {processed_path}")
 
 def main():
     # 记录开始时间
@@ -126,47 +215,26 @@ def main():
     print("初始化Spark...")
     spark = initialize_spark()
 
-    # 加载数据
-    print("加载数据...")
-    games_df, users_df, recommendations_df, metadata_df = load_data(data_path)
+    # 首先尝试加载中间数据
+    games_with_metadata, train_data, test_data, data_loaded = load_intermediate_data(data_path)
 
-    # 数据预处理
-    print("预处理数据...")
-    games_with_metadata, spark_ratings, processed_recommendations = preprocess_data(
-        games_df, users_df, recommendations_df, metadata_df, spark
-    )
+    if not data_loaded:
+        # 如果没有中间数据，从原始数据开始处理
+        print("加载原始数据...")
+        games_df, users_df, recommendations_df, metadata_df = load_data(data_path)
 
-    # 分割数据
-    print("分割数据为训练集和测试集...")
-    train_data, test_data = split_data(processed_recommendations)
+        # 数据预处理
+        print("预处理数据...")
+        games_with_metadata, spark_ratings, processed_recommendations = preprocess_data(
+            games_df, users_df, recommendations_df, metadata_df, spark
+        )
 
-    # 保存训练和测试数据
-    data_dir = get_storage_path("data/processed")
-    if not data_dir.startswith("s3://"):
-        os.makedirs(data_dir, exist_ok=True)
+        # 分割数据
+        print("分割数据为训练集和测试集...")
+        train_data, test_data = split_data(processed_recommendations)
 
-        # 保存为CSV
-        train_data.to_csv(f"{data_dir}/train_data.csv", index=False)
-        test_data.to_csv(f"{data_dir}/test_data.csv", index=False)
-        print(f"训练和测试数据已保存到 {data_dir}")
-    else:
-        # S3保存逻辑
-        s3_bucket = data_dir.replace("s3://", "").split("/")[0]
-        s3_prefix = "/".join(data_dir.replace("s3://", "").split("/")[1:])
-
-        # 创建临时文件
-        train_data.to_csv("temp_train_data.csv", index=False)
-        test_data.to_csv("temp_test_data.csv", index=False)
-
-        # 上传到S3
-        s3_client = boto3.client('s3')
-        s3_client.upload_file("temp_train_data.csv", s3_bucket, f"{s3_prefix}/train_data.csv")
-        s3_client.upload_file("temp_test_data.csv", s3_bucket, f"{s3_prefix}/test_data.csv")
-
-        # 删除临时文件
-        os.remove("temp_train_data.csv")
-        os.remove("temp_test_data.csv")
-        print(f"训练和测试数据已上传到 S3: {data_dir}")
+        # 保存中间数据以便下次使用
+        save_intermediate_data(games_with_metadata, train_data, test_data, data_path)
 
     # 创建Spark格式的训练和测试数据
     spark_train = spark.createDataFrame(train_data[['user_id', 'app_id', 'rating']])

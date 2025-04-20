@@ -206,7 +206,7 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
             if len(processed_recommendations) > 10000000:  # 1000万条记录以上
                 # 分批转换为Spark DataFrame
                 print("分批转换为Spark DataFrame...")
-                batch_size = 5000000  # 500万条记录一批
+                batch_size = 2000000  # 500万条记录一批
                 total_batches = len(processed_recommendations) // batch_size + 1
 
                 for i in range(total_batches):

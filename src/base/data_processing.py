@@ -153,13 +153,15 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
         # 确保标签是列表 - 修复的部分
         def process_tags(x):
             # 检查是否为空或NaN
-            if pd.isna(x) or (isinstance(x, str) and x == ''):
+            if pd.isna(x):
                 return []
             # 若已经是列表，直接返回
             elif isinstance(x, list):
                 return x
-            # 若是字符串且可能是JSON，尝试解析
+            # 若是字符串，检查是否为空或尝试解析JSON
             elif isinstance(x, str):
+                if x == '':
+                    return []
                 try:
                     parsed = json.loads(x)
                     return parsed if isinstance(parsed, list) else []

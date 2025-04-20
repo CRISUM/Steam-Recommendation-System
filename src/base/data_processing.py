@@ -129,3 +129,81 @@ def load_data(data_path=None):
               f"{len(recommendations_df)} 条评价, {len(metadata_df)} 条游戏元数据")
 
         return games_df, users_df, recommendations_df, metadata_df
+
+
+def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=None):
+    """预处理数据，合并游戏元数据和转换评分"""
+    print("预处理数据...")
+
+    # 处理游戏数据与元数据
+    if not games_df.empty and not metadata_df.empty:
+        # 合并游戏数据和元数据
+        games_with_metadata = pd.merge(
+            games_df,
+            metadata_df[['app_id', 'description', 'tags']],
+            on='app_id',
+            how='left'
+        )
+
+        # 填充缺失值
+        games_with_metadata['description'] = games_with_metadata['description'].fillna('')
+
+        # 确保标签是列表
+        games_with_metadata['tags'] = games_with_metadata['tags'].apply(
+            lambda x: [] if pd.isna(x) or x == '' else x
+        )
+
+        print(f"处理后的游戏数据: {len(games_with_metadata)} 条记录")
+    else:
+        games_with_metadata = games_df.copy() if not games_df.empty else pd.DataFrame()
+        print("警告: 游戏数据或元数据为空")
+
+    # 处理推荐数据
+    if not recommendations_df.empty:
+        # 将is_recommended和hours转换为评分
+        if 'rating' not in recommendations_df.columns:
+            recommendations_df['rating'] = recommendations_df.apply(
+                lambda row: min(10.0, row['hours'] / 10) * (1.5 if row['is_recommended'] else 0.5),
+                axis=1
+            )
+
+        # 处理后的推荐数据
+        processed_recommendations = recommendations_df.copy()
+        print(f"处理后的推荐数据: {len(processed_recommendations)} 条记录")
+    else:
+        processed_recommendations = pd.DataFrame()
+        print("警告: 推荐数据为空")
+
+    # 如果提供了Spark会话，转换为Spark DataFrame
+    spark_ratings = None
+    if spark is not None and not processed_recommendations.empty:
+        try:
+            # 创建Spark DataFrame
+            spark_ratings = spark.createDataFrame(
+                processed_recommendations[['user_id', 'app_id', 'rating']]
+            )
+            print(f"创建Spark评分数据: {spark_ratings.count()} 条记录")
+        except Exception as e:
+            print(f"创建Spark DataFrame时出错: {e}")
+
+    return games_with_metadata, spark_ratings, processed_recommendations
+
+
+def split_data(data, test_ratio=0.2, random_state=42):
+    """将数据分割为训练集和测试集"""
+    np.random.seed(random_state)
+
+    # 按用户划分，确保每个用户的数据不会同时出现在训练集和测试集中
+    user_ids = data['user_id'].unique()
+    test_users = np.random.choice(
+        user_ids,
+        size=int(len(user_ids) * test_ratio),
+        replace=False
+    )
+
+    # 划分数据
+    test_data = data[data['user_id'].isin(test_users)]
+    train_data = data[~data['user_id'].isin(test_users)]
+
+    print(f"训练集: {len(train_data)} 条记录, 测试集: {len(test_data)} 条记录")
+    return train_data, test_data

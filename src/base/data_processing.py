@@ -152,7 +152,7 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
 
         # 确保标签是列表
         games_with_metadata['tags'] = games_with_metadata['tags'].apply(
-            lambda x: [] if pd.isna(x) or x == '' else x
+            lambda x: [] if pd.isna(x) or (isinstance(x, str) and x == '') else x
         )
 
         print(f"处理后的游戏数据: {len(games_with_metadata)} 条记录")

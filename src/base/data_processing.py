@@ -16,7 +16,7 @@ def initialize_spark(app_name="SteamRecommendationSystem"):
 
     # 检查是否在EMR集群上运行 - 在集群模式下不要指定master
     if not is_emr_cluster_mode():
-        builder = builder.master("local[*]")
+        return 0;
 
     # 添加S3访问配置
     spark = builder \

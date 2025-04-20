@@ -46,6 +46,7 @@ def initialize_spark():
         # 如果在本地环境，则可以设置master为local
         if not is_emr_cluster_mode():
             builder = builder.master("local[*]")
+            return 0;
 
         # 添加其他配置
         spark = builder \

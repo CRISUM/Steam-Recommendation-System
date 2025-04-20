@@ -150,10 +150,26 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
         # 填充缺失值
         games_with_metadata['description'] = games_with_metadata['description'].fillna('')
 
-        # 确保标签是列表
-        games_with_metadata['tags'] = games_with_metadata['tags'].apply(
-            lambda x: [] if pd.isna(x) or (isinstance(x, str) and x == '') else x
-        )
+        # 确保标签是列表 - 修复的部分
+        def process_tags(x):
+            # 检查是否为空或NaN
+            if pd.isna(x) or (isinstance(x, str) and x == ''):
+                return []
+            # 若已经是列表，直接返回
+            elif isinstance(x, list):
+                return x
+            # 若是字符串且可能是JSON，尝试解析
+            elif isinstance(x, str):
+                try:
+                    parsed = json.loads(x)
+                    return parsed if isinstance(parsed, list) else []
+                except:
+                    return []
+            # 其他情况返回空列表
+            else:
+                return []
+
+        games_with_metadata['tags'] = games_with_metadata['tags'].apply(process_tags)
 
         print(f"处理后的游戏数据: {len(games_with_metadata)} 条记录")
     else:

@@ -13,7 +13,17 @@ def get_s3_client():
 
 def is_emr_cluster_mode():
     """检测是否在EMR集群上运行"""
-    return "AWS_EMR_CLUSTER_ID" in os.environ
+    is_cluster = "AWS_EMR_CLUSTER_ID" in os.environ
+    mode_str = "Cluster mode" if is_cluster else "Local mode"
+
+    # Print to stdout
+    print(f"Running in: {mode_str}")
+
+    # Print to stderr
+    import sys
+    print(f"Environment detected: {mode_str}", file=sys.stderr)
+
+    return is_cluster
 
 def get_storage_path(local_path, s3_bucket="steam-project-data-976193243904"):
     """

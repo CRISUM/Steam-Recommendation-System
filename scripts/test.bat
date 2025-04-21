@@ -1,0 +1,16 @@
+aws emr create-cluster ^
+ --name "SRS_TEST" ^
+ --log-uri "s3://aws-logs-976193243904-ap-southeast-1/elasticmapreduce" ^
+ --release-label "emr-7.8.0" ^
+ --service-role "arn:aws:iam::976193243904:role/service-role/AmazonEMR-ServiceRole-20250414T041618" ^
+ --ec2-attributes "{\"InstanceProfile\":\"EC2SteamRecommenderS3Access\",\"EmrManagedMasterSecurityGroup\":\"sg-03f6c1b42590c9390\",\"EmrManagedSlaveSecurityGroup\":\"sg-03f6c1b42590c9390\",\"KeyName\":\"SRS 1\",\"SubnetIds\":[\"subnet-0286f0b19639c4657\"]}" ^
+ --tags "for-use-with-amazon-emr-managed-policies=true" ^
+ --applications Name=Hadoop Name=Hive Name=JupyterEnterpriseGateway Name=Livy Name=Spark ^
+ --configurations "[{\"Classification\":\"spark-hive-site\",\"Properties\":{\"hive.metastore.client.factory.class\":\"com.amazonaws.glue.catalog.metastore.AWSGlueDataCatalogHiveClientFactory\"}}]" ^
+ --bootstrap-actions "[{\"Path\":\"s3://steam-project-data-976193243904/scripts/bootstrap.sh\",\"Name\":\"Install Python Dependencies\"}]" ^
+ --instance-groups "[{\"InstanceCount\":1,\"InstanceGroupType\":\"MASTER\",\"Name\":\"Primary\",\"InstanceType\":\"m5.xlarge\",\"EbsConfiguration\":{\"EbsBlockDeviceConfigs\":[{\"VolumeSpecification\":{\"VolumeType\":\"gp2\",\"SizeInGB\":32},\"VolumesPerInstance\":2}]}},{\"InstanceCount\":1,\"InstanceGroupType\":\"TASK\",\"Name\":\"Task - 1\",\"InstanceType\":\"m5.xlarge\",\"EbsConfiguration\":{\"EbsBlockDeviceConfigs\":[{\"VolumeSpecification\":{\"VolumeType\":\"gp2\",\"SizeInGB\":32},\"VolumesPerInstance\":2}]}},{\"InstanceCount\":1,\"InstanceGroupType\":\"CORE\",\"Name\":\"Core\",\"InstanceType\":\"m5.xlarge\",\"EbsConfiguration\":{\"EbsBlockDeviceConfigs\":[{\"VolumeSpecification\":{\"VolumeType\":\"gp2\",\"SizeInGB\":32},\"VolumesPerInstance\":2}]}}]" ^
+ --steps "[{\"Name\":\"clone_github\",\"ActionOnFailure\":\"CONTINUE\",\"Jar\":\"s3://ap-southeast-1.elasticmapreduce/libs/script-runner/script-runner.jar\",\"Properties\":\"\",\"Args\":[\"s3://steam-project-data-976193243904/scripts/clone_repo.sh\"],\"Type\":\"CUSTOM_JAR\"},{\"Name\":\"run_main\",\"ActionOnFailure\":\"CONTINUE\",\"Jar\":\"s3://ap-southeast-1.elasticmapreduce/libs/script-runner/script-runner.jar\",\"Properties\":\"\",\"Args\":[\"s3://steam-project-data-976193243904/scripts/run_main.sh\"],\"Type\":\"CUSTOM_JAR\"},{\"Name\":\"online_learn\",\"ActionOnFailure\":\"CONTINUE\",\"Jar\":\"s3://ap-southeast-1.elasticmapreduce/libs/script-runner/script-runner.jar\",\"Properties\":\"\",\"Args\":[\"s3://steam-project-data-976193243904/scripts/start_online_learning.sh\"],\"Type\":\"CUSTOM_JAR\"}]" ^
+ --scale-down-behavior "TERMINATE_AT_TASK_COMPLETION" ^
+ --ebs-root-volume-size "32" ^
+ --auto-termination-policy "{\"IdleTimeout\":3600}" ^
+ --region "ap-southeast-1"

@@ -25,24 +25,37 @@ def build_als_model(ratings_df, rank=10, reg_param=0.1, alpha=1.0, max_iter=10):
 
 
 def evaluate_als_model(model, test_data):
-    """评估ALS模型性能"""
-    # 使用模型进行预测
-    predictions = model.transform(test_data)
+    """评估ALS模型性能，避免使用count()操作"""
+    try:
+        # 使用模型进行预测
+        predictions = model.transform(test_data)
 
-    # RMSE评估
-    evaluator = RegressionEvaluator(
-        metricName="rmse",
-        labelCol="rating",
-        predictionCol="prediction"
-    )
-    rmse = evaluator.evaluate(predictions)
+        # 过滤掉null预测，但不使用count()
+        valid_predictions = predictions.filter(predictions.prediction.isNotNull())
 
-    # MAE评估
-    evaluator.setMetricName("mae")
-    mae = evaluator.evaluate(predictions)
+        # 采样少量数据检查是否为空（比全量count更高效）
+        if valid_predictions.limit(1).count() == 0:
+            print("警告: 预测结果为空，无法评估模型")
+            return {"RMSE": float('nan'), "MAE": float('nan')}
 
-    return {"RMSE": rmse, "MAE": mae}
+        # RMSE评估
+        evaluator = RegressionEvaluator(
+            metricName="rmse",
+            labelCol="rating",
+            predictionCol="prediction"
+        )
 
+        rmse = evaluator.evaluate(valid_predictions)
+
+        # MAE评估
+        evaluator.setMetricName("mae")
+        mae = evaluator.evaluate(valid_predictions)
+
+        return {"RMSE": rmse, "MAE": mae}
+    except Exception as e:
+        print(f"评估时发生错误: {e}")
+        # 出错时返回默认值
+        return {"RMSE": float('nan'), "MAE": float('nan')}
 
 def tune_als_parameters(train_data, validation_data=None, test_ratio=0.2):
     """ALS模型参数调优"""

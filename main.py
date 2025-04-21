@@ -296,9 +296,14 @@ def main():
     als_model = build_als_model(spark_train, rank, reg_param, alpha)
 
     # 评估ALS模型
-    print("评估ALS模型...")
-    als_metrics = evaluate_als_model(als_model, spark_test)
-    print(f"ALS模型评估结果: {als_metrics}")
+    try:
+        print("评估ALS模型...")
+        als_metrics = evaluate_als_model(als_model, spark_test)
+        print(f"ALS模型评估结果: {als_metrics}")
+    except Exception as e:
+        print(f"评估ALS模型时出错: {e}")
+        # 使用默认值继续执行
+        als_metrics = {"RMSE": float('nan'), "MAE": float('nan')}
 
     # 在这里添加保存检查点
     save_checkpoint(als_model, "als_complete", als_metrics)

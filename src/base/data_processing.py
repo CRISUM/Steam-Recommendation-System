@@ -28,12 +28,11 @@ def initialize_spark(app_name="SteamRecommendationSystem"):
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
         .config("spark.hadoop.fs.s3a.fast.upload", "true") \
         .config("spark.hadoop.fs.s3a.connection.maximum", "100") \
-        .config("spark.executor.memory", "16g") \
-        .config("spark.driver.memory", "16g") \
-        .config("spark.driver.maxResultSize", "8g") \
+        .config("spark.executor.memory", "8g") \
+        .config("spark.driver.memory", "8g") \
+        .config("spark.driver.maxResultSize", "4g") \
         .config("spark.memory.fraction", "0.8") \
-        .config("spark.executor.memoryOverhead", "4g") \
-        .config("spark.yarn.executor.memoryOverhead", "4g") \
+        .config("spark.executor.memoryOverhead", "2g") \
         .getOrCreate()
 
     return spark

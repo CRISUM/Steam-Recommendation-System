@@ -240,8 +240,8 @@ def main():
 
     # 创建Spark格式的训练和测试数据 - 通过临时存储优化内存使用
     print("将训练和测试数据转换为Spark格式(使用临时存储优化内存)...")
-    train_data_path = "s3a://steam-project-data-976193243904/temp/spark_train_data"
-    test_data_path = "s3a://steam-project-data-976193243904/temp/spark_test_data"
+    train_data_path = "s3://steam-project-data-976193243904/temp/spark_train_data"
+    test_data_path = "s3://steam-project-data-976193243904/temp/spark_test_data"
     # 分批处理训练数据
     batch_size = 2000000  # 每批200万条记录
     total_batches = len(train_data) // batch_size + 1

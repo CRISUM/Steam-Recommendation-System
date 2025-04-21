@@ -209,7 +209,27 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
                 batch_size = 2000000  # 500万条记录一批
                 total_batches = len(processed_recommendations) // batch_size + 1
 
-                for i in range(total_batches):
+                # 在批处理循环前添加这些代码
+                checkpoint_found = False
+                last_checkpoint = None
+
+                # 检查是否存在检查点
+                for i in range(total_batches, 0, -1):
+                    checkpoint_path = f"s3://steam-project-data-976193243904/temp/checkpoint_{i}"
+                    try:
+                        # 尝试读取检查点
+                        spark_ratings = spark.read.parquet(checkpoint_path)
+                        checkpoint_found = True
+                        last_checkpoint = i
+                        print(f"找到检查点 {checkpoint_path}，从批次 {i + 1} 继续处理")
+                        break
+                    except Exception:
+                        continue
+
+                # 如果找到检查点，从下一个批次开始处理
+                start_batch = 0 if not checkpoint_found else last_checkpoint
+
+                for i in range(start_batch, total_batches):
                     start_idx = i * batch_size
                     end_idx = min((i + 1) * batch_size, len(processed_recommendations))
                     print(f"转换批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
@@ -224,7 +244,26 @@ def preprocess_data(games_df, users_df, recommendations_df, metadata_df, spark=N
                     else:
                         spark_ratings = spark_ratings.union(batch_spark)
 
-                print(f"创建Spark评分数据: {spark_ratings.count()} 条记录")
+                    # 添加检查点逻辑 - 每5个批次保存一次
+                    if (i + 1) % 5 == 0 or i == total_batches - 1:
+                        try:
+                            checkpoint_path = f"s3://steam-project-data-976193243904/temp/checkpoint_{i + 1}"
+                            print(f"保存检查点到 {checkpoint_path}")
+
+                            # 保存当前数据帧到S3
+                            spark_ratings.write.parquet(checkpoint_path, mode="overwrite")
+
+                            # 从检查点重新加载数据，减轻内存压力
+                            print(f"从检查点 {checkpoint_path} 重新加载数据")
+                            spark_ratings = spark.read.parquet(checkpoint_path)
+                        except Exception as e:
+                            print(f"保存检查点时出错: {e}")
+                            # 继续执行，即使检查点失败
+
+                # 问题在这里 - 不要尝试立即计算count
+                # print(f"创建Spark评分数据: {spark_ratings.count()} 条记录")
+                # 而是仅打印批次数
+                print(f"创建Spark评分数据: 已处理{total_batches}个批次")
             else:
                 # 直接转换
                 spark_ratings = spark.createDataFrame(

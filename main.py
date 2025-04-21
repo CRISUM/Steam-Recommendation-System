@@ -3,6 +3,8 @@ import os
 import json
 import time
 import sys
+import fsspec
+import s3fs
 
 import pandas as pd
 
@@ -236,9 +238,44 @@ def main():
         # 保存中间数据以便下次使用
         save_intermediate_data(games_with_metadata, train_data, test_data, data_path)
 
-    # 创建Spark格式的训练和测试数据
-    spark_train = spark.createDataFrame(train_data[['user_id', 'app_id', 'rating']])
-    spark_test = spark.createDataFrame(test_data[['user_id', 'app_id', 'rating']])
+    # 创建Spark格式的训练和测试数据 - 通过临时存储优化内存使用
+    print("将训练和测试数据转换为Spark格式(使用临时存储优化内存)...")
+    train_data_path = get_storage_path("temp/spark_train_data")
+    test_data_path = get_storage_path("temp/spark_test_data")
+
+    # 分批处理训练数据
+    batch_size = 2000000  # 每批200万条记录
+    total_batches = len(train_data) // batch_size + 1
+    for i in range(total_batches):
+        start_idx = i * batch_size
+        end_idx = min((i + 1) * batch_size, len(train_data))
+        print(f"处理训练数据批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+
+        batch_df = train_data.iloc[start_idx:end_idx]
+        train_spark_batch = spark.createDataFrame(batch_df[['user_id', 'app_id', 'rating']])
+
+        # 第一批覆盖写入，后续批次追加
+        mode = "overwrite" if i == 0 else "append"
+        train_spark_batch.write.parquet(train_data_path, mode=mode)
+
+    # 同样处理测试数据
+    batch_size = 500000  # 测试数据通常较小
+    total_batches = len(test_data) // batch_size + 1
+    for i in range(total_batches):
+        start_idx = i * batch_size
+        end_idx = min((i + 1) * batch_size, len(test_data))
+        print(f"处理测试数据批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+
+        batch_df = test_data.iloc[start_idx:end_idx]
+        test_spark_batch = spark.createDataFrame(batch_df[['user_id', 'app_id', 'rating']])
+
+        mode = "overwrite" if i == 0 else "append"
+        test_spark_batch.write.parquet(test_data_path, mode=mode)
+
+    # 从parquet文件读回数据
+    print("从临时存储加载Spark格式数据...")
+    spark_train = spark.read.parquet(train_data_path)
+    spark_test = spark.read.parquet(test_data_path)
 
     # 是否进行超参数调优（可选，耗时较长）
     tune_parameters = False

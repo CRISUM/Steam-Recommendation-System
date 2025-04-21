@@ -22,10 +22,17 @@ def initialize_spark(app_name="SteamRecommendationSystem"):
 
     # 添加S3访问配置
     spark = builder \
+        .config("spark.hadoop.fs.s3.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.s3n.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+        .config("spark.hadoop.fs.AbstractFileSystem.s3.impl", "org.apache.hadoop.fs.s3a.S3A") \
+        .config("spark.hadoop.fs.AbstractFileSystem.s3a.impl", "org.apache.hadoop.fs.s3a.S3A") \
+        .config("spark.hadoop.fs.AbstractFileSystem.s3n.impl", "org.apache.hadoop.fs.s3a.S3A") \
         .config("spark.hadoop.fs.s3a.access.key", os.environ.get("AWS_ACCESS_KEY_ID", "")) \
         .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("AWS_SECRET_ACCESS_KEY", "")) \
         .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com") \
+        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
+        .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "true") \
         .config("spark.hadoop.fs.s3a.fast.upload", "true") \
         .config("spark.hadoop.fs.s3a.connection.maximum", "100") \
         .config("spark.executor.memory", "8g") \

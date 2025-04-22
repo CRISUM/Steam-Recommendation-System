@@ -9,12 +9,12 @@ zip -r src.zip src
 spark-submit \
   --master yarn \
   --deploy-mode client \
-  --executor-memory 8g \  # 增加到8g
-  --driver-memory 8g \    # 增加到8g
+  --executor-memory 8g \
+  --driver-memory 8g \
   --conf spark.executor.cores=2 \
-  --conf spark.executor.memoryOverhead=2g \  # 添加内存开销
-  --conf spark.driver.memoryOverhead=2g \    # 添加内存开销
-  --conf spark.driver.maxResultSize=4g \     # 增加结果大小限制
+  --conf spark.executor.memoryOverhead=2g \
+  --conf spark.driver.memoryOverhead=2g \
+  --conf spark.driver.maxResultSize=4g \
   --conf spark.pyspark.python=/usr/bin/python3 \
   --conf spark.pyspark.driver.python=/usr/bin/python3 \
   --conf spark.dynamicAllocation.enabled=true \

@@ -29,6 +29,7 @@ spark-submit \
   --conf spark.sql.adaptive.coalescePartitions.enabled=true \
   --conf spark.default.parallelism=20 \
   --conf spark.sql.shuffle.partitions=20 \
+  --conf spark.hadoop.mapred.output.committer.class=org.apache.hadoop.mapred.FileOutputCommitter
   --py-files src.zip \
   main.py
 

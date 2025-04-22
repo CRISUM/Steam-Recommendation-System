@@ -28,29 +28,48 @@ def prepare_content_data(games_df):
     return games_df
 
 
-def build_tfidf_model(games_df, max_features=10000):
+def build_tfidf_model(games_df, max_features=5000):
     """构建TF-IDF模型"""
     # 准备内容数据
     content_df = prepare_content_data(games_df)
 
     # 创建TF-IDF向量化器
     tfidf = TfidfVectorizer(
-        max_features=max_features,
+        max_features=max_features,  # 减少特征数量
         stop_words='english',
         ngram_range=(1, 2)
     )
 
     # 生成TF-IDF矩阵
+    print(f"生成TF-IDF矩阵 (max_features={max_features})...")
     tfidf_matrix = tfidf.fit_transform(content_df['content_features'])
+    print(f"TF-IDF矩阵大小: {tfidf_matrix.shape}")
 
-    # 计算余弦相似度
-    cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
+    # 计算余弦相似度 - 使用分块计算
+    print("计算余弦相似度矩阵（分块处理以减少内存使用）...")
+    cosine_sim = chunked_cosine_similarity(tfidf_matrix)
 
     # 创建游戏索引映射
     indices = pd.Series(content_df.index, index=content_df['app_id'])
 
     return tfidf, cosine_sim, indices, content_df
+# 分块计算余弦相似度
+def chunked_cosine_similarity(X, chunk_size=2000):
+    n_samples = X.shape[0]
+    cosine_sim = np.zeros((n_samples, n_samples))
 
+    for i in range(0, n_samples, chunk_size):
+        end = min(i + chunk_size, n_samples)
+        chunk = X[i:end]
+
+        # 计算当前块与所有数据的相似度
+        similarity = cosine_similarity(chunk, X)
+        cosine_sim[i:end] = similarity
+
+        # 打印进度
+        print(f"计算余弦相似度: {end}/{n_samples} 完成 ({end / n_samples:.1%})")
+
+    return cosine_sim
 
 def get_content_recommendations(app_id, cosine_sim, indices, games_df, top_n=10):
     """根据内容相似度获取推荐"""

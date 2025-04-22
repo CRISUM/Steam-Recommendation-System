@@ -2,7 +2,7 @@ aws emr create-cluster ^
  --name "SRS_TEST" ^
  --log-uri "s3://aws-logs-976193243904-ap-southeast-1/elasticmapreduce" ^
  --release-label "emr-7.8.0" ^
- --service-role "EMR_DefaultRole" ^
+ --service-role "arn:aws:iam::976193243904:role/service-role/AmazonEMR-ServiceRole-20250414T041618" ^
  --ec2-attributes "{\"InstanceProfile\":\"EC2SteamRecommenderS3Access\",\"EmrManagedMasterSecurityGroup\":\"sg-03f6c1b42590c9390\",\"EmrManagedSlaveSecurityGroup\":\"sg-03f6c1b42590c9390\",\"KeyName\":\"SRS 1\",\"SubnetIds\":[\"subnet-0286f0b19639c4657\"]}" ^
  --tags "for-use-with-amazon-emr-managed-policies=true" ^
  --applications Name=Hadoop Name=Hive Name=JupyterEnterpriseGateway Name=Livy Name=Spark ^

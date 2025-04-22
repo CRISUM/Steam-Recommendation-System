@@ -195,12 +195,17 @@ def save_intermediate_data(games_with_metadata, train_data, test_data, data_path
 
         print(f"中间数据已保存到: {processed_path}")
 
+
 def main():
     # 记录开始时间
     start_time = time.time()
 
     # 数据路径 - 始终指向S3
     data_path = "s3://steam-project-data-976193243904"
+
+    # Spark 格式数据路径
+    train_data_path = "s3://steam-project-data-976193243904/temp/spark_train_data"
+    test_data_path = "s3://steam-project-data-976193243904/temp/spark_test_data"
 
     # 结果保存路径 - 根据环境使用本地或S3
     results_path = get_storage_path("results")
@@ -238,43 +243,97 @@ def main():
         # 保存中间数据以便下次使用
         save_intermediate_data(games_with_metadata, train_data, test_data, data_path)
 
-    # 创建Spark格式的训练和测试数据 - 通过临时存储优化内存使用
-    print("将训练和测试数据转换为Spark格式(使用临时存储优化内存)...")
-    train_data_path = "s3://steam-project-data-976193243904/temp/spark_train_data"
-    test_data_path = "s3://steam-project-data-976193243904/temp/spark_test_data"
-    # 分批处理训练数据
-    batch_size = 2000000  # 每批200万条记录
-    total_batches = len(train_data) // batch_size + 1
-    for i in range(total_batches):
-        start_idx = i * batch_size
-        end_idx = min((i + 1) * batch_size, len(train_data))
-        print(f"处理训练数据批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+    # 检查S3是否存在Spark格式数据
+    spark_data_exists = False
+    try:
+        # 尝试列出S3存储桶中的文件
+        s3_client = boto3.client('s3')
+        bucket_name = train_data_path.replace("s3://", "").split("/")[0]
+        prefix = "/".join(train_data_path.replace("s3://", "").split("/")[1:])
 
-        batch_df = train_data.iloc[start_idx:end_idx]
-        train_spark_batch = spark.createDataFrame(batch_df[['user_id', 'app_id', 'rating']])
+        # 检查训练数据
+        train_response = s3_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix=prefix,
+            MaxKeys=1
+        )
 
-        # 第一批覆盖写入，后续批次追加
-        mode = "overwrite" if i == 0 else "append"
-        train_spark_batch.write.parquet(train_data_path, mode=mode)
+        # 检查测试数据
+        test_prefix = "/".join(test_data_path.replace("s3://", "").split("/")[1:])
+        test_response = s3_client.list_objects_v2(
+            Bucket=bucket_name,
+            Prefix=test_prefix,
+            MaxKeys=1
+        )
 
-    # 同样处理测试数据
-    batch_size = 500000  # 测试数据通常较小
-    total_batches = len(test_data) // batch_size + 1
-    for i in range(total_batches):
-        start_idx = i * batch_size
-        end_idx = min((i + 1) * batch_size, len(test_data))
-        print(f"处理测试数据批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+        # 判断两个数据集是否都存在
+        if 'Contents' in train_response and 'Contents' in test_response:
+            spark_data_exists = True
+            print("S3上发现已有Spark格式数据")
+    except Exception as e:
+        print(f"检查S3 Spark数据时出错: {e}")
+        spark_data_exists = False
 
-        batch_df = test_data.iloc[start_idx:end_idx]
-        test_spark_batch = spark.createDataFrame(batch_df[['user_id', 'app_id', 'rating']])
+    # 根据检查结果加载或处理数据
+    if spark_data_exists:
+        # 直接从S3读取已处理的Parquet文件
+        print("从S3加载Spark格式数据...")
+        try:
+            spark_train = spark.read.parquet(train_data_path)
+            spark_test = spark.read.parquet(test_data_path)
+            print(f"成功加载Spark训练数据: {spark_train.count()} 条记录")
+            print(f"成功加载Spark测试数据: {spark_test.count()} 条记录")
+        except Exception as e:
+            print(f"加载S3 Spark数据失败: {e}")
+            spark_data_exists = False  # 标记为不存在，需要重新处理
 
-        mode = "overwrite" if i == 0 else "append"
-        test_spark_batch.write.parquet(test_data_path, mode=mode)
+    # 如果S3上没有有效的Spark数据，则需要处理并存储
+    if not spark_data_exists:
+        print("将训练和测试数据转换为Spark格式并存储...")
 
-    # 从parquet文件读回数据
-    print("从临时存储加载Spark格式数据...")
-    spark_train = spark.read.parquet(train_data_path)
-    spark_test = spark.read.parquet(test_data_path)
+        # 处理并存储训练数据
+        batch_size = 2000000  # 每批200万条记录
+        total_batches = len(train_data) // batch_size + 1
+
+        for i in range(total_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, len(train_data))
+            print(f"处理训练数据批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+
+            batch_df = train_data.iloc[start_idx:end_idx]
+            train_spark_batch = spark.createDataFrame(batch_df[['user_id', 'app_id', 'rating']])
+
+            # 第一批覆盖写入，后续批次追加
+            mode = "overwrite" if i == 0 else "append"
+            try:
+                train_spark_batch.write.parquet(train_data_path, mode=mode)
+            except Exception as e:
+                print(f"存储训练数据批次 {i + 1} 到S3失败: {e}")
+                # 继续处理下一批
+
+        # 处理并存储测试数据
+        batch_size = 500000  # 测试数据通常较小
+        total_batches = len(test_data) // batch_size + 1
+
+        for i in range(total_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, len(test_data))
+            print(f"处理测试数据批次 {i + 1}/{total_batches} ({start_idx}:{end_idx})")
+
+            batch_df = test_data.iloc[start_idx:end_idx]
+            test_spark_batch = spark.createDataFrame(batch_df[['user_id', 'app_id', 'rating']])
+
+            mode = "overwrite" if i == 0 else "append"
+            try:
+                test_spark_batch.write.parquet(test_data_path, mode=mode)
+            except Exception as e:
+                print(f"存储测试数据批次 {i + 1} 到S3失败: {e}")
+                # 继续处理下一批
+
+        # 读取刚存储的数据
+        print("从S3加载刚处理的Spark格式数据...")
+        spark_train = spark.read.parquet(train_data_path)
+        spark_test = spark.read.parquet(test_data_path)
 
     # 是否进行超参数调优（可选，耗时较长）
     tune_parameters = False
@@ -308,9 +367,9 @@ def main():
     # 在这里添加保存检查点
     save_checkpoint(als_model, "als_complete", als_metrics)
 
-    # 构建TF-IDF模型
+    # 构建TF-IDF模型 - 修改为使用分块计算余弦相似度
     print("构建TF-IDF模型...")
-    tfidf, cosine_sim, indices, content_df = build_tfidf_model(games_with_metadata)
+    tfidf, cosine_sim, indices, content_df = build_tfidf_model(games_with_metadata, max_features=5000)  # 减少max_features
 
     # 在这里添加保存检查点（仅保存指标，不保存模型）
     save_checkpoint(None, "tfidf_complete", {"status": "complete"})
